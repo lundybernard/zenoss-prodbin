@@ -9,7 +9,7 @@
 
 """Device
 
-Base device (remote computer) class
+Base device (remote computer) class.
 """
 
 import cgi
@@ -18,15 +18,20 @@ import logging
 import socket
 import time
 
+from functools import partial
+from urllib import quote as urlquote
+
+import six
+
 from AccessControl import ClassSecurityInfo
 from AccessControl.class_init import InitializeClass
 from Acquisition import aq_base
+from App.special_dtml import DTMLFile
 from BTrees.OOBTree import OOSet
 from DateTime import DateTime
-from App.special_dtml import DTMLFile
 from ipaddr import IPAddress
 from OFS.CopySupport import CopyError
-from urllib import quote as urlquote
+from Products.PluginIndexes.FieldIndex.FieldIndex import FieldIndex
 from zenoss.protocols.protobufs.zep_pb2 import (
     SEVERITY_CRITICAL,
     SEVERITY_ERROR,
@@ -41,13 +46,10 @@ from zope.event import notify
 from zope.interface import implementer
 
 from Products.Jobber.jobs import FacadeMethodJob
-from Products.PluginIndexes.FieldIndex.FieldIndex import FieldIndex
 from Products.ZenEvents.browser.EventPillsAndSummaries import getEventPillME
 from Products.ZenEvents.events2.proxy import EventProxy
 from Products.ZenEvents.ZenEventClasses import Status_Ping
 from Products.ZenMessaging.audit import audit
-from Products.ZenModel.Exceptions import DeviceExistsError, NoSnmp
-from Products.ZenModel.interfaces import IExpandedLinkProvider
 from Products.ZenRelations.RelSchema import ToManyCont, ToMany, ToOne
 from Products.ZenUtils import NetworkTree, Time
 from Products.ZenUtils.deprecated import deprecated
@@ -87,6 +89,8 @@ from .AdministrativeRoleable import AdministrativeRoleable
 from .Commandable import Commandable
 from .DeviceHW import DeviceHW
 from .EventView import IEventView
+from .Exceptions import DeviceExistsError, NoSnmp
+from .interfaces import IExpandedLinkProvider
 from .Lockable import Lockable
 from .MaintenanceWindowable import MaintenanceWindowable
 from .ManagedEntity import ManagedEntity
@@ -238,8 +242,9 @@ def findCommunity(
                 break
             except POSError:
                 raise
-            except Exception:
-                pass  # keep trying until we run out
+            except Exception as ex:
+                log.debug("community lookup failed: %s", ex)
+                continue  # keep trying until we run out
         if goodcommunity:
             break
     else:
@@ -467,7 +472,9 @@ class Device(
         import warnings
 
         warnings.warn(
-            "Device.getRRDTemplate is deprecated", DeprecationWarning
+            "Device.getRRDTemplate is deprecated",
+            DeprecationWarning,
+            stacklevel=1,
         )
         return ManagedEntity.getRRDTemplate(self)
 
@@ -548,11 +555,10 @@ class Device(
         """
         from Products.ZenEvents import Availability
 
-        results = Availability.query(self.dmd, device=self.id, *args, **kw)
-        if results:
-            return results[0]
-        else:
-            return None
+        kwargs = dict(kw)
+        kwargs["device"] = self.id
+        results = Availability.query(self.dmd, *args, **kwargs)
+        return results[0] if results else None
 
     # FIXME: cleanup --force option #2660
     def __getattr__(self, name):
@@ -620,8 +626,8 @@ class Device(
         ]
 
     def traceRoute(self, target, ippath=None):
-        """
-        Trace the route to target using our routing table.
+        """Trace the route to target using our routing table.
+
         Wrapper method of OperatingSystem.traceRoute
 
         @param target: Device name
@@ -633,15 +639,15 @@ class Device(
         """
         if ippath is None:
             ippath = []
-        if isinstance(target, basestring):
+        if isinstance(target, six.string_types):
             target = self.findDevice(target)
             if not target:
                 raise ValueError("Target %s not found in DMD" % target)
         return self.os.traceRoute(target, ippath)
 
     def getMonitoredComponents(self, collector=None, type=None):
-        """
-        Return list of monitored DeviceComponents on this device.
+        """Return list of monitored DeviceComponents on this device.
+
         Wrapper method for getDeviceComponents
         """
         components = self.getDeviceComponents(
@@ -782,8 +788,7 @@ class Device(
                     yield obj
 
     def getSnmpConnInfo(self):
-        """
-        Returns an object containing SNMP Connection Info
+        """Returns an object containing SNMP Connection Info
 
         @rtype: SnmpConnInfo object
         """
@@ -799,16 +804,14 @@ class Device(
         return self.hw.getManufacturerName()
 
     def getHWProductName(self):
-        """
-        Return the hardware product name of this device.
+        """Return the hardware product name of this device.
 
         @rtype: string
         """
         return self.hw.getProductName()
 
     def getHWProductClass(self):
-        """
-        Return the hardware product class of this device.
+        """Return the hardware product class of this device.
 
         @rtype: string
         """
@@ -847,9 +850,7 @@ class Device(
     security.declareProtected(ZEN_CHANGE_DEVICE, "setOSProductKey")
 
     def setOSProductKey(self, prodKey, manufacturer=None):
-        """
-        Set the productKey of the device OS.
-        """
+        """Set the productKey of the device OS."""
         self.os.setProductKey(prodKey, manufacturer)
 
     def getHWTag(self):
@@ -862,25 +863,19 @@ class Device(
     security.declareProtected(ZEN_CHANGE_DEVICE, "setHWTag")
 
     def setHWTag(self, assettag):
-        """
-        Set the asset tag of the device hardware.
-        """
+        """Set the asset tag of the device hardware."""
         self.hw.tag = assettag
 
     security.declareProtected(ZEN_CHANGE_DEVICE, "setHWProductKey")
 
     def setHWProductKey(self, prodKey, manufacturer=None):
-        """
-        Set the productKey of the device hardware.
-        """
+        """Set the productKey of the device hardware."""
         self.hw.setProductKey(prodKey, manufacturer)
 
     security.declareProtected(ZEN_CHANGE_DEVICE, "setHWSerialNumber")
 
     def setHWSerialNumber(self, number):
-        """
-        Set the hardware serial number.
-        """
+        """Set the hardware serial number."""
         self.hw.serialNumber = number
 
     def getHWSerialNumber(self):
@@ -891,9 +886,8 @@ class Device(
         return self.hw.serialNumber
 
     def followNextHopIps(self):
-        """
-        Return the ips that our indirect routs point to which aren't currently
-        connected to devices.
+        """Return the ips that our indirect routs point to which aren't
+        currently connected to devices.
 
         @todo: Can be moved to zendisc.py
         """
@@ -908,8 +902,9 @@ class Device(
     security.declareProtected(ZEN_VIEW, "getLocationName")
 
     def getLocationName(self):
-        """
-        Return the location name. i.e. "Rack" from /Locations/Loc/SubLoc/Rack
+        """Return the location name.
+
+        I.e. "Rack" from /Locations/Loc/SubLoc/Rack
 
         @rtype: string
         @permission: ZEN_VIEW
@@ -922,8 +917,7 @@ class Device(
     security.declareProtected(ZEN_VIEW, "getLocationLink")
 
     def getLocationLink(self):
-        """
-        Return a link to the device's location.
+        """Return a link to the device's location.
 
         @rtype: string
         @permission: ZEN_VIEW
@@ -942,13 +936,12 @@ class Device(
     security.declareProtected(ZEN_VIEW, "getSystemNames")
 
     def getSystemNames(self):
-        """
-        Return the system names for this device
+        """Return the system names for this device.
 
         @rtype: list
         @permission: ZEN_VIEW
         """
-        return map(lambda x: x.getOrganizerName(), self.systems())
+        return [x.getOrganizerName() for x in self.systems()]
 
     security.declareProtected(ZEN_VIEW, "getSystemNamesString")
 
@@ -964,19 +957,17 @@ class Device(
     security.declareProtected(ZEN_VIEW, "getDeviceGroupNames")
 
     def getDeviceGroupNames(self):
-        """
-        Return the device group names for this device
+        """Return the device group names for this device.
 
         @rtype: list
         @permission: ZEN_VIEW
         """
-        return map(lambda x: x.getOrganizerName(), self.groups())
+        return [x.getOrganizerName() for x in self.groups()]
 
     security.declareProtected(ZEN_VIEW, "getPerformanceServer")
 
     def getPerformanceServer(self):
-        """
-        Return the device performance server
+        """Return the device performance server.
 
         @rtype: PerformanceMonitor
         @permission: ZEN_VIEW
@@ -986,8 +977,7 @@ class Device(
     security.declareProtected(ZEN_VIEW, "getPerformanceServerName")
 
     def getPerformanceServerName(self):
-        """
-        Return the device performance server name
+        """Return the device performance server name.
 
         @rtype: string
         @permission: ZEN_VIEW
@@ -1004,8 +994,7 @@ class Device(
     security.declareProtected(ZEN_VIEW, "getLastChange")
 
     def getLastChange(self):
-        """
-        Return DateTime of last change detected on this device.
+        """Return DateTime of last change detected on this device.
 
         @rtype: DateTime
         @permission: ZEN_VIEW
@@ -1015,8 +1004,7 @@ class Device(
     security.declareProtected(ZEN_VIEW, "getLastChangeString")
 
     def getLastChangeString(self):
-        """
-        Return date string of last change detected on this device.
+        """Return date string of last change detected on this device.
 
         @rtype: string
         @permission: ZEN_VIEW
@@ -1026,8 +1014,7 @@ class Device(
     security.declareProtected(ZEN_VIEW, "getSnmpLastCollection")
 
     def getSnmpLastCollection(self):
-        """
-        Return DateTime of last SNMP collection on this device.
+        """Return DateTime of last SNMP collection on this device.
 
         @rtype: DateTime
         @permission: ZEN_VIEW
@@ -1037,8 +1024,7 @@ class Device(
     security.declareProtected(ZEN_VIEW, "getSnmpLastCollectionString")
 
     def getSnmpLastCollectionString(self):
-        """
-        Return date string of last SNMP collection on this device.
+        """Return date string of last SNMP collection on this device.
 
         @rtype: string
         @permission: ZEN_VIEW
@@ -1085,8 +1071,8 @@ class Device(
     security.declareProtected(ZEN_ADMIN_DEVICE, "setManageIp")
 
     def setManageIp(self, ip="", REQUEST=None):
-        """
-        Set the manage IP, if IP is not passed perform DNS lookup.
+        """Set the manage IP, if IP is not passed perform DNS lookup.
+
         If there is an error with the IP address format, the IP address
         will be reset to the result of a DNS lookup.
 
@@ -1101,7 +1087,7 @@ class Device(
         if not ip:  # What if they put in a DNS name?
             try:
                 ip = getHostByName(origip)
-                if ip == "0.0.0.0":
+                if ip == "0.0.0.0":  # noqa: S104
                     # Host resolution failed
                     ip = ""
             except socket.error:
@@ -1114,9 +1100,8 @@ class Device(
                 ip = ""
                 if origip:
                     message = (
-                        "%s is an invalid IP address, "
-                        "and no appropriate IP could"
-                        " be found via DNS for %s"
+                        "%s is an invalid IP address, and no appropriate "
+                        "IP could be found via DNS for %s"
                     ) % (origip, self.id)
                     log.warn(message)
                 else:
@@ -1128,7 +1113,6 @@ class Device(
             if self._isDuplicateIp(ip):
                 message = "The IP address %s is already assigned" % ip
                 log.warn(message)
-
             else:
                 self.manageIp = ip
                 notify(
@@ -1152,8 +1136,7 @@ class Device(
     security.declareProtected(ZEN_VIEW, "getManageIp")
 
     def getManageIp(self):
-        """
-        Return the management ip for this device.
+        """Return the management ip for this device.
 
         @rtype: string
         @permission: ZEN_VIEW
@@ -1162,8 +1145,7 @@ class Device(
 
     @deprecated
     def getManageIpObj(self):
-        """
-        DEPRECATED - Return the management ipobject for this device.
+        """DEPRECATED - Return the management ipobject for this device.
 
         @rtype: IpAddress
         @todo: This method may not be called anywhere, remove it.
@@ -1174,8 +1156,7 @@ class Device(
     security.declareProtected(ZEN_VIEW, "getManageInterface")
 
     def getManageInterface(self):
-        """
-        Return the management interface of a device based on its manageIp.
+        """Return the management interface of a device based on its manageIp.
 
         @rtype: IpInterface
         @permission: ZEN_VIEW
@@ -1187,8 +1168,7 @@ class Device(
     security.declareProtected(ZEN_VIEW, "uptimeStr")
 
     def uptimeStr(self):
-        """
-        Return the SNMP uptime
+        """Return the SNMP uptime.
 
         @rtype: string
         @permission: ZEN_VIEW
@@ -1207,8 +1187,7 @@ class Device(
         return "%02dd:%02dh:%02dm:%02ds" % (days, hour, mins, secs)
 
     def getPeerDeviceClassNames(self):
-        """
-        Build a list of all device paths that have the python class pyclass
+        """Return all device paths that have the python class pyclass.
 
         @rtype: list
         """
@@ -1222,8 +1201,7 @@ class Device(
     security.declareProtected(ZEN_CHANGE_DEVICE, "manage_snmpCommunity")
 
     def manage_snmpCommunity(self):
-        """
-        Reset the snmp community using the zSnmpCommunities variable.
+        """Reset the snmp community using the zSnmpCommunities variable.
 
         @permission: ZEN_CHANGE_DEVICE
         """
@@ -1318,100 +1296,30 @@ class Device(
           performanceMonitor -- collector name [string]
 
         """
-        if "title" in kwargs and kwargs["title"] is not None:
-            newTitle = str(kwargs["title"]).strip()
-            if newTitle and newTitle != self.title:
-                log.info("setting title to %r", newTitle)
-                self.title = newTitle
-        if (
-            "tag" in kwargs
-            and kwargs["tag"] is not None
-            and kwargs["tag"] != self.hw.tag
-        ):
-            log.info("setting tag to %r", kwargs["tag"])
-            self.hw.tag = kwargs["tag"]
-        if (
-            "serialNumber" in kwargs
-            and kwargs["serialNumber"] is not None
-            and kwargs["serialNumber"] != self.hw.serialNumber
-        ):
-            log.info("setting serialNumber to %r", kwargs["serialNumber"])
-            self.hw.serialNumber = kwargs["serialNumber"]
-
-        # Set zProperties passed in intelligently
-        if "zProperties" in kwargs and kwargs["zProperties"] is not None:
-            zProperties = kwargs["zProperties"]
-        else:
-            zProperties = {}
-
-        # override any snmp properties that may be in zProperties
-        zpropUpdate = dict(
-            (name, kwargs[name])
-            for name in ("zSnmpCommunity", "zSnmpPort", "zSnmpVer")
-            if name in kwargs
+        _setTitle(self, kwargs.get("title"))
+        _setTag(self.hw, kwargs.get("tag"))
+        _setSerialNumber(self.hw, kwargs.get("serialNumber"))
+        _setzProperties(
+            self,
+            kwargs.get("zProperties"),
+            kwargs.get("zSnmpCommunity"),
+            kwargs.get("zSnmpPort"),
+            kwargs.get("zSnmpVer"),
         )
-        zProperties.update(zpropUpdate)
-
-        # apply any zProperties to self
-        for prop, value in zProperties.items():
-            if value is not None and value != "":
-                # setZenProperty doesn't set it if it's the same value, so no
-                # need to check here
-                self.setZenProperty(prop, value)
-
-        if "rackSlot" in kwargs and kwargs["rackSlot"] != self.rackSlot:
-            # rackSlot may be a string or integer
-            log.info("setting rackSlot to %r", kwargs["rackSlot"])
-            self.rackSlot = kwargs["rackSlot"]
-
-        if "productionState" in kwargs:
-            # Always set production state,
-            # but don't log it if it didn't change.
-            if kwargs["productionState"] != self.getProductionState():
-                prodStateName = self.dmd.convertProdState(
-                    int(kwargs["productionState"])
-                )
-                log.info("setting productionState to %s", prodStateName)
-            self.setProdState(kwargs["productionState"])
-
-        if "priority" in kwargs and int(kwargs["priority"]) != self.priority:
-            priorityName = self.dmd.convertPriority(kwargs["priority"])
-            log.info("setting priority to %s", priorityName)
-            self.setPriority(kwargs["priority"])
-
-        if "comments" in kwargs and kwargs["comments"] != self.comments:
-            log.info("setting comments to %r", kwargs["comments"])
-            self.comments = kwargs["comments"]
-
+        _setRackSlot(self, kwargs.get("rackSlot"))
+        _setProductionState(self, kwargs.get("productionState"))
+        _setPriority(self, kwargs.get("priority"))
+        _setComments(self, kwargs.get("comments"))
         self.setProductInfo(
             hwManufacturer=kwargs.get("hwManufacturer", "_no_change"),
             hwProductName=kwargs.get("hwProductName", "_no_change"),
             osManufacturer=kwargs.get("osManufacturer", "_no_change"),
             osProductName=kwargs.get("osProductName", "_no_change"),
         )
-
-        if kwargs.get("locationPath", False):
-            log.info("setting location to %r", kwargs["locationPath"])
-            self.setLocation(kwargs["locationPath"])
-
-        if kwargs.get("groupPaths", False):
-            log.info("setting group %r", kwargs["groupPaths"])
-            self.setGroups(kwargs["groupPaths"])
-
-        if kwargs.get("systemPaths", False):
-            log.info("setting system %r", kwargs["systemPaths"])
-            self.setSystems(kwargs["systemPaths"])
-
-        if (
-            "performanceMonitor" in kwargs
-            and kwargs["performanceMonitor"] != self.getPerformanceServerName()
-        ):
-            log.info(
-                "setting performance monitor to %r",
-                kwargs["performanceMonitor"],
-            )
-            self.setPerformanceMonitor(kwargs["performanceMonitor"])
-
+        _setLocation(self, kwargs.get("locationPath"))
+        _setGroups(self, kwargs.get("groupPaths"))
+        _setSystems(self, kwargs.get("systemPaths"))
+        _setPerformanceMonitor(self, kwargs.get("performanceMonitor"))
         self.setLastChange()
         notify(IndexingEvent(self))
 
@@ -1432,8 +1340,8 @@ class Device(
         osManufacturer="",
         osProductName="",
         locationPath="",
-        groupPaths=[],
-        systemPaths=[],
+        groupPaths=(),
+        systemPaths=(),
         performanceMonitor="localhost",
         priority=3,
         zProperties=None,
@@ -1492,15 +1400,12 @@ class Device(
     security.declareProtected(ZEN_CHANGE_DEVICE, "setTitle")
 
     def setTitle(self, newTitle):
-        """
-        Changes the title to newTitle and reindexes the object
-        """
+        """Changes the title to newTitle and reindexes the object."""
         super(Device, self).setTitle(newTitle)
         notify(IndexingEvent(self, ("name",), True))
 
     def monitorDevice(self):
-        """
-        Returns true if the device production state >= zProdStateThreshold.
+        """Returns true if the device production state >= zProdStateThreshold.
 
         @rtype: boolean
         """
@@ -1510,8 +1415,7 @@ class Device(
         )
 
     def snmpMonitorDevice(self):
-        """
-        Returns true if the device is subject to SNMP monitoring
+        """Returns true if the device is subject to SNMP monitoring.
 
         @rtype: boolean
         """
@@ -1530,24 +1434,21 @@ class Device(
         return self.zProdStateThreshold
 
     def getPriority(self):
-        """
-        Return the numeric device priority.
+        """Return the numeric device priority.
 
         @rtype: int
         """
         return self.priority
 
     def getPriorityString(self):
-        """
-        Return the device priority as a string.
+        """Return the device priority as a string.
 
         @rtype: string
         """
         return str(self.convertPriority(self.priority))
 
     def getPingStatusString(self):
-        """
-        Return the pingStatus as a string
+        """Return the pingStatus as a string.
 
         @rtype: string
         """
@@ -1557,8 +1458,7 @@ class Device(
         return "Down"
 
     def getSnmpStatusString(self):
-        """
-        Return the snmpStatus as a string
+        """Return the snmpStatus as a string.
 
         @rtype: string
         """
@@ -1570,8 +1470,7 @@ class Device(
     security.declareProtected(ZEN_CHANGE_DEVICE_PRODSTATE, "setProdState")
 
     def setProdState(self, state, maintWindowChange=False, REQUEST=None):
-        """
-        Set the device's production state.
+        """Set the device's production state.
 
         @parameter state: new production state
         @type state: int
@@ -1596,8 +1495,7 @@ class Device(
     security.declareProtected(ZEN_CHANGE_DEVICE, "setPriority")
 
     def setPriority(self, priority, REQUEST=None):
-        """
-        Set the device's priority
+        """Set the device's priority.
 
         @type priority: int
         @permission: ZEN_CHANGE_DEVICE
@@ -1615,8 +1513,7 @@ class Device(
     security.declareProtected(ZEN_CHANGE_DEVICE, "setLastChange")
 
     def setLastChange(self, value=None):
-        """
-        Set the changed datetime for this device.
+        """Set the changed datetime for this device.
 
         @param value: secs since the epoch, default is now
         @type value: float
@@ -1629,8 +1526,7 @@ class Device(
     security.declareProtected(ZEN_CHANGE_DEVICE, "setSnmpLastCollection")
 
     def setSnmpLastCollection(self, value=None):
-        """
-        Set the last time snmp collection occurred.
+        """Set the last time snmp collection occurred.
 
         @param value: secs since the epoch, default is now
         @type value: float
@@ -1835,8 +1731,7 @@ class Device(
     security.declareProtected(ZEN_CHANGE_DEVICE, "setGroups")
 
     def setGroups(self, groupPaths):
-        """
-        Set the list of groups for this device based on a list of paths
+        """Set the list of groups for this device based on a list of paths.
 
         @permission: ZEN_CHANGE_DEVICE
         """
@@ -1847,9 +1742,8 @@ class Device(
     security.declareProtected(ZEN_CHANGE_DEVICE, "addDeviceGroup")
 
     def addDeviceGroup(self, newDeviceGroupPath, REQUEST=None):
-        """
+        """Add a device group to the database and this device.
         DEPRECATED?
-        Add a device group to the database and this device
 
         @permission: ZEN_CHANGE_DEVICE
         @todo: Already exists on ZDeviceLoader
@@ -1867,8 +1761,7 @@ class Device(
     security.declareProtected(ZEN_CHANGE_DEVICE, "setSystems")
 
     def setSystems(self, systemPaths):
-        """
-        Set a list of systems to this device using their system paths
+        """Set a list of systems to this device using their system paths.
 
         @permission: ZEN_CHANGE_DEVICE
         """
@@ -1879,9 +1772,8 @@ class Device(
     security.declareProtected(ZEN_CHANGE_DEVICE, "addSystem")
 
     def addSystem(self, newSystemPath, REQUEST=None):
-        """
+        """Add a systems to this device using its system path.
         DEPRECATED?
-        Add a systems to this device using its system path
 
         @permission: ZEN_CHANGE_DEVICE
         @todo: Already exists on ZDeviceLoader
@@ -1898,8 +1790,7 @@ class Device(
     security.declareProtected(ZEN_CHANGE_DEVICE, "setTerminalServer")
 
     def setTerminalServer(self, termservername):
-        """
-        Set the terminal server of this device
+        """Set the terminal server of this device.
 
         @param termservername: device name of terminal server
         @permission: ZEN_CHANGE_DEVICE
@@ -1909,8 +1800,7 @@ class Device(
             self.addRelation("termserver", termserver)
 
     def _setRelations(self, relName, objGetter, relPaths):
-        """
-        Set related objects to this device
+        """Set related objects to this device.
 
         @param relName: name of the relation to set
         @param objGetter: method to get the relation
@@ -1950,8 +1840,7 @@ class Device(
         return expandedLinkList
 
     def getExpandedLinks(self):
-        """
-        Return the expanded zComment property
+        """Return the expanded zComment property.
 
         @rtype: HTML output
         """
@@ -1975,8 +1864,7 @@ class Device(
     security.declareProtected(ZEN_VIEW, "device")
 
     def device(self):
-        """
-        Support DeviceResultInt mixin class. Returns itself
+        """Support DeviceResultInt mixin class. Returns itself.
 
         @permission: ZEN_VIEW
         """
@@ -1987,8 +1875,7 @@ class Device(
     ####################################################################
 
     def pastSnmpMaxFailures(self):
-        """
-        Returns true if the device has more SNMP failures
+        """Returns true if the device has more SNMP failures
         than maxFailures on its status mon.
 
         @rtype: boolean
@@ -2005,8 +1892,7 @@ class Device(
     )
 
     def getLastPollSnmpUpTime(self):
-        """
-        Get the value of the snmpUpTime status object
+        """Get the value of the snmpUpTime status object.
 
         @permission: ZEN_MANAGE_DEVICE_STATUS
         """
@@ -2018,17 +1904,14 @@ class Device(
     )
 
     def setLastPollSnmpUpTime(self, value):
-        """
-        Set the value of the snmpUpTime status object
+        """Set the value of the snmpUpTime status object.
 
         @permission: ZEN_MANAGE_DEVICE_STATUS
         """
         self._lastPollSnmpUpTime.setStatus(value)
 
     def snmpAgeCheck(self, hours):
-        """
-        Returns True if SNMP data was collected more than 24 hours ago
-        """
+        """Returns True if SNMP data was collected more than 24 hours ago."""
         lastcoll = self.getSnmpLastCollection()
         hours = hours / 24.0
         if DateTime() > lastcoll + hours:
@@ -2037,17 +1920,14 @@ class Device(
     security.declareProtected(ZEN_CHANGE_DEVICE, "applyProductContext")
 
     def applyProductContext(self):
-        """
-        Apply zProperties inherited from Product Contexts.
-        """
+        """Apply zProperties inherited from Product Contexts."""
         self._applyProdContext(self.hw.getProductContext())
         self._applyProdContext(self.os.getProductContext())
         for soft in self.os.software():
             self._applyProdContext(soft.getProductContext())
 
     def _applyProdContext(self, context):
-        """
-        Apply zProperties taken for the product context passed in.
+        """Apply zProperties taken for the product context passed in.
 
         @param context: list of tuples returned from
         getProductContext on a MEProduct.
@@ -2120,82 +2000,74 @@ class Device(
 
     def runDeviceMonitor(self, REQUEST=None, write=None, debug=False):
         """
-        Run monitoring daemon agains the device ones
+        Run monitoring daemon against the device ones
         """
         # Daemons to run against the device
-        xmlrpc = isXmlRpc(REQUEST)
+        get_result_value = _identity if isXmlRpc(REQUEST) else _noop
+        _write = partial(write) if write is not None else _noop
+
         perfConf = self.getPerformanceServer()
         if perfConf is None:
             msg = (
                 "Device %s in unknown state -- remove and remodel"
                 % self.titleOrId()
             )
-            if write is not None:
-                write(msg)
+            _write(msg)
             log.error("Unable to get collector info: %s", msg)
-            if xmlrpc:
-                return 1
-            return
+            return get_result_value(1)
 
         # Getting all the datasources from template signed to that
         # device for determining which daemon to run
-        templates = self.getRRDTemplates()
-        datasources = itertools.chain.from_iterable(
-            template.getRRDDataSources() for template in templates
+        collection_daemons = _getCollectionDaemonsFromTemplates(
+            self.getRRDTemplates()
         )
-        collection_daemons = set()
-        for ds in datasources:
-            if isPythonDataSource(ds):
-                daemon = _sourcetype_to_collector_map['Python']
-            else:
-                daemon = _sourcetype_to_collector_map.get(ds.sourcetype)
-            if daemon:
-                collection_daemons.add(daemon)
-
         # We support only core collection daemons
         # zenpython; zenperfsnmp; zencommand
         if not collection_daemons:
-            if write:
-                write('Monitoring through UI only support COMMAND, '
-                      'SNMP and ZenPython type of datasources')
-            if xmlrpc:
-                return 1
-            return
+            _write(
+                "Monitoring through UI only support COMMAND, "
+                "SNMP and ZenPython type of datasources"
+            )
+            return get_result_value(1)
+
         # Pass collection_daemons as a list because perfConf.runDeviceMonitor
         # was written expecting that parameter to be a list.
         perfConf.runDeviceMonitor(
-            self, REQUEST, write, list(collection_daemons), debug=debug,
+            self,
+            REQUEST,
+            write,
+            list(collection_daemons),
+            debug=debug,
         )
         if REQUEST:
             audit("UI.Device.Remodel", self)
-        if xmlrpc:
-            return 0
+        return get_result_value(0)
 
     security.declareProtected(ZEN_MANAGE_DEVICE, "monitorPerDatasource")
 
     def monitorPerDatasource(self, dsObj, REQUEST=None, write=None):
-        """
-        Run monitoring daemon against one device and one datasource ones
-        """
+        """Run monitoring daemon against one device and one datasource ones."""
         parameter = "--datasource"
         value = "%s/%s" % (dsObj.rrdTemplate.obj.id, dsObj.id)
         if isPythonDataSource(dsObj):
-            collection_daemon = _sourcetype_to_collector_map['Python']
-        elif dsObj.sourcetype == 'COMMAND':
-            collection_daemon = _sourcetype_to_collector_map['COMMAND']
+            collection_daemon = _sourcetype_to_collector_map["Python"]
+        elif dsObj.sourcetype == "COMMAND":
+            collection_daemon = _sourcetype_to_collector_map["COMMAND"]
         elif dsObj.sourcetype == "SNMP":
-            collection_daemon = _sourcetype_to_collector_map['SNMP']
+            collection_daemon = _sourcetype_to_collector_map["SNMP"]
             parameter = "--oid"
             value = dsObj.oid
         else:
-            collection_daemon = ''
+            collection_daemon = ""
 
         xmlrpc = isXmlRpc(REQUEST)
         perfConf = self.getPerformanceServer()
         if not collection_daemon:
             if write:
-                write('Modeling through UI only support COMMAND, '
-                      'SNMP and ZenPython type of datasources')
+                write(
+                    "Modeling through UI only support COMMAND, "
+                    "SNMP and ZenPython type of datasources"
+                )
             if xmlrpc:
                 return 1
             return
@@ -2216,33 +2088,41 @@ class Device(
         deviceId = self.titleOrId()
         manageIp = self.manageIp
         ipaddr = self.ipaddress()
-        log.debug('Set manageIp on {} to empty string'.format(deviceId))
+        log.debug("Set manageIp on {} to empty string".format(deviceId))
         if ipaddr:
             ipaddrString = ipaddr.id
-            log.debug('Removing ipaddress/manageDevice relation from {} to {}'.format(deviceId, str(ipaddr)))
+            log.debug(
+                "Removing ipaddress/manageDevice relation from %s to %s",
+                deviceId,
+                ipaddr,
+            )
             if ipaddrString != manageIp:
                 # Shouldn't happen, but manageIp is not the
                 # IP set on the device.
-                log.warn('Device {} has a mismatch between manageIp({})'
-                              'and device ip ({})'.format(
-                                  deviceId, manageIp, ipaddrString
-                                  )
-                              )
+                log.warn(
+                    "Device {} has a mismatch between manageIp({})"
+                    "and device ip ({})".format(
+                        deviceId, manageIp, ipaddrString
+                    )
+                )
             # Remove the ip from the ipaddress relation on the device
             self.ipaddress.removeRelation(ipaddr)
-            # removeIpAddresses will only remove IP addresses that are no longer
-            #  attached to any device, so it's safe to call at this point
-            netFacade = getFacade('network', self.dmd)
+            # removeIpAddresses will only remove IP addresses that are no
+            # longer attached to any device, so it's safe to call here.
+            netFacade = getFacade("network", self.dmd)
             ips = [ipaddr.getPrimaryId()]
-            log.debug('Removing IP address obj {} if no longer used'.format(ipaddrString))
+            log.debug(
+                "Removing IP address obj {} if no longer used".format(
+                    ipaddrString
+                )
+            )
             removeCount, errorCount = netFacade.removeIpAddresses(ips)
             if errorCount:
                 # This most likely means that the IP address is still
                 # attached to a different device
-                log.warn('Could not remove '
-                         'IP address {}'.format(ipaddrString))
+                log.warn("Could not remove IP address {}".format(ipaddrString))
         # Set the manageIp to blank
-        self.manageIp = ''
+        self.manageIp = ""
 
     security.declareProtected(ZEN_DELETE_DEVICE, "deleteDevice")
 
@@ -2300,9 +2180,9 @@ class Device(
     security.declareProtected(ZEN_ADMIN_DEVICE, "renameDevice")
 
     def renameDevice(self, newId=None, REQUEST=None, retainGraphData=False):
-        """
-        Rename device from the DMD.  Disallow assignment of
-        an id that already exists in the system.
+        """Rename device from the DMD.
+
+        Disallow assignment of an id that already exists in the system.
         Block renaming for this Device if a rename is already in progress.
 
         @permission: ZEN_ADMIN_DEVICE
@@ -2312,10 +2192,9 @@ class Device(
         @type REQUEST: Zope REQUEST object
         """
         if self.renameInProgress:
-            log.warn("Rename already in progress for device %s.", self.id)
-            raise Exception(
-                "Rename already in progress for device {}.".format(self.id),
-            )
+            msg = "Rename already in progress for device %s." % (self.id,)
+            log.warn(msg)
+            raise RuntimeError(msg)
 
         parent = self.getPrimaryParent()
         path = self.absolute_url_path()
@@ -2324,7 +2203,7 @@ class Device(
         if newId is None:
             return path
 
-        if not isinstance(newId, unicode):
+        if not isinstance(newId, six.text_type):
             newId = self.prepId(newId)
 
         newId = newId.strip()
@@ -2335,8 +2214,7 @@ class Device(
         device = self.dmd.Devices.findDeviceByIdExact(newId)
         if device:
             raise DeviceExistsError(
-                "Device already exists with id %s" % newId,
-                device,
+                "Device already exists with id %s" % newId, device
             )
 
         if REQUEST:
@@ -2372,64 +2250,51 @@ class Device(
                 "Reassociating performance data for device {} with "
                 "new ID {}".format(oldId, newId)
             ),
-            kwargs=dict(
-                facadefqdn="Products.Zuul.facades.metricfacade.MetricFacade",
-                method="renameDevice",
-                oldId=oldId,
-                newId=newId,
-            ),
+            kwargs={
+                "facadefqdn": (
+                    "Products.Zuul.facades.metricfacade.MetricFacade"
+                ),
+                "method": "renameDevice",
+                "oldId": oldId,
+                "newId": newId,
+            },
         )
 
     security.declareProtected(ZEN_CHANGE_DEVICE, "index_object")
 
     @deprecated
     def index_object(self, idxs=None, noips=False):
-        """
-        Override so ips get indexed on move.  DEPRECATED
-        """
+        """Override so ips get indexed on move.  DEPRECATED"""
         pass
 
     security.declareProtected(ZEN_CHANGE_DEVICE, "unindex_object")
 
     @deprecated
     def unindex_object(self):
-        """
-        Override so ips get unindexed as well.  DEPRECATED
-        """
+        """Override so ips get unindexed as well.  DEPRECATED"""
         pass
 
     def getUserCommandTargets(self):
-        """
-        Called by Commandable.doCommand() to ascertain objects on which
+        """Called by Commandable.doCommand() to ascertain objects on which
         a UserCommand should be executed.
         """
         return [self]
 
     def getUserCommandEnvironment(self):
-        """
-        Returns the tales environment used to evaluate the command
-        """
+        """Returns the tales environment used to evaluate the command."""
         environ = Commandable.getUserCommandEnvironment(self)
         context = self.primaryAq()
-        environ.update(
-            {
-                "dev": context,
-                "device": context,
-            }
-        )
+        environ.update({"dev": context, "device": context})
         return environ
 
     def getUrlForUserCommands(self):
-        """
-        Returns a URL to redirect to after a command has executed
+        """Returns a URL to redirect to after a command has executed
         used by Commandable
         """
         return self.getPrimaryUrlPath() + "/deviceManagement"
 
     def getHTMLEventSummary(self, severity=4):
-        """
-        Returns HTML Event Summary of a device
-        """
+        """Returns HTML Event Summary of a device."""
         html = []
         html.append("<table width='100%' cellspacing='1' cellpadding='3'>")
         html.append("<tr>")
@@ -2475,16 +2340,11 @@ class Device(
         return [id, ip, path, prod, evsum, self.id]
 
     def exportXmlHook(self, ofile, ignorerels):
-        """
-        Add export of our child objects.
-        """
-        map(lambda o: o.exportXml(ofile, ignorerels), (self.hw, self.os))
-
-    security.declareProtected(ZEN_MANAGE_DEVICE, "pushConfig")
+        """Add export of our child objects."""
+        return [o.exportXml(ofile, ignorerels) for o in (self.hw, self.os)]
 
     def pushConfig(self, REQUEST=None):
-        """
-        This will result in a push of all the devices to live collectors
+        """This will result in a push of all the devices to live collectors.
 
         @permission: ZEN_MANAGE_DEVICE
         """
@@ -2500,8 +2360,7 @@ class Device(
     security.declareProtected(ZEN_EDIT_LOCAL_TEMPLATES, "bindTemplates")
 
     def bindTemplates(self, ids=(), REQUEST=None):
-        """
-        This will bind available templates to the zDeviceTemplates
+        """This will bind available templates to the zDeviceTemplates.
 
         @permission: ZEN_EDIT_LOCAL_TEMPLATES
         """
@@ -2515,8 +2374,7 @@ class Device(
     )
 
     def removeZDeviceTemplates(self, REQUEST=None):
-        """
-        Deletes the local zProperty, zDeviceTemplates
+        """Deletes the local zProperty, zDeviceTemplates.
 
         @permission: ZEN_EDIT_LOCAL_TEMPLATES
         """
@@ -2537,8 +2395,7 @@ class Device(
     security.declareProtected(ZEN_EDIT_LOCAL_TEMPLATES, "addLocalTemplate")
 
     def addLocalTemplate(self, id, REQUEST=None):
-        """
-        Create a local template on a device
+        """Create a local template on a device.
 
         @permission: ZEN_EDIT_LOCAL_TEMPLATES
         """
@@ -2560,14 +2417,12 @@ class Device(
             return self.callZenScreen(REQUEST)
 
     def getAvailableTemplates(self):
-        """
-        Returns all available templates for this device
-        """
+        """Returns all available templates for this device."""
         # All templates defined on this device are available
         templates = self.objectValues("RRDTemplate")
         # Any templates available to the class that aren't overridden locally
         # are also available
-        device_template_ids = set(t.id for t in templates)
+        device_template_ids = {t.id for t in templates}
         templates.extend(
             t
             for t in self.deviceClass().getRRDTemplates()
@@ -2627,8 +2482,7 @@ class Device(
 
     @unpublished
     def getPrettyLink(self, target=None, altHref=""):
-        """
-        Gets a link to this device, plus an icon
+        """Gets a link to this device, plus an icon.
 
         @rtype: HTML text
         @permission: ZEN_VIEW
@@ -2654,8 +2508,7 @@ class Device(
             )
 
     def osProcessClassMatchData(self):
-        """
-        Get a list of dictionaries containing everything needed to match
+        """Get a list of dictionaries containing everything needed to match
         processes against the global list of process classes.
         """
         matchers = []
@@ -2674,8 +2527,7 @@ class Device(
         return matchers
 
     def manageIpVersion(self):
-        """
-        Returns either 4 or 6 depending on the version
+        """Returns either 4 or 6 depending on the version
         of the manageIp ip adddress
         """
         from ipaddr import IPAddress
@@ -2697,36 +2549,30 @@ class Device(
         @rtype:   string
         @return:  Prefix used for snmwalk for this device
         """
-        if self.manageIpVersion() == 6:
-            return "udp6:"
-        return ""
+        return "" if (self.manageIpVersion() != 6) else "udp6:"
 
     def pingCommand(self):
-        """
-        Used by the user commands this returns which ping command
+        """Used by the user commands this returns which ping command
         this device should use.
+
         @rtype: string
         @return "ping" or "ping6" depending on if the manageIp is ipv6 or not
         """
-        if self.manageIpVersion() == 6:
-            return "ping6"
-        return "ping"
+        return "ping" if (self.manageIpVersion() != 6) else "ping6"
 
     def tracerouteCommand(self):
-        """
-        Used by the user commands this returns which traceroute command
+        """Used by the user commands this returns which traceroute command
         this device should use.
+
         @rtype: string
         @return "traceroute" or "traceroute6" depending on if the manageIp is
             ipv6 or not
         """
-        if self.manageIpVersion() == 6:
-            return "traceroute6"
-        return "traceroute"
+        return "traceroute" if (self.manageIpVersion() != 6) else "traceroute6"
 
     def getStatus(self, statusclass=None, **kwargs):
-        """
-        Return the status number for this device of class statClass.
+        """Return the status number for this device of class statClass.
+
         If statusclass not set, search by zStatusEventClass.
         """
         if not self.monitorDevice():
@@ -2800,7 +2646,6 @@ class Device(
     def getMacAddressCache(self):
         if self.macaddresses is None:
             self.macaddresses = OOSet()
-
         return self.macaddresses
 
     def getMacAddresses(self):
@@ -2808,3 +2653,132 @@ class Device(
 
 
 InitializeClass(Device)
+
+
+def _setTitle(obj, title):
+    if title is None:
+        return
+    newTitle = str(title).strip()
+    if newTitle and newTitle != obj.title:
+        log.info("setting title to %r", newTitle)
+        obj.title = newTitle
+
+
+def _setTag(hw, tag):
+    if tag is None or tag == hw.tag:
+        return
+    log.info("setting tag to %r", tag)
+    hw.tag = tag
+
+
+def _setSerialNumber(hw, serialNumber):
+    if serialNumber is None or serialNumber == hw.serialNumber:
+        return
+    log.info("setting serialNumber to %r", serialNumber)
+    hw.serialNumber = serialNumber
+
+
+def _setzProperties(obj, zProps, zSnmpCommunity, zSnmpPort, zSnmpVer):
+    if zProps is None:
+        zProps = {}
+
+    # override any snmp properties that may be in zProperties
+    if zSnmpCommunity is not None:
+        zProps["zSnmpCommunity"] = zSnmpCommunity
+    if zSnmpPort is not None:
+        zProps["zSnmpPort"] = zSnmpPort
+    if zSnmpVer is not None:
+        zProps["zSnmpVer"] = zSnmpVer
+
+    # apply any zProperties to self
+    for prop, value in zProps.items():
+        if not value:
+            continue
+        # setZenProperty doesn't set it if it's the same value,
+        # so no need to check here.
+        obj.setZenProperty(prop, value)
+
+
+def _setRackSlot(obj, rackslot):
+    if rackslot is None or rackslot == obj.rackSlot:
+        return
+    # rackSlot may be a string or integer
+    log.info("setting rackSlot to %r", rackslot)
+    obj.rackSlot = rackslot
+
+
+def _setProductionState(obj, productionState):
+    if productionState is None:
+        return
+    # Always set production state, but don't log it if it didn't change.
+    if productionState != obj.getProductionState():
+        name = obj.dmd.convertProdState(int(productionState))
+        log.info("setting productionState to %s", name)
+    obj.setProdState(productionState)
+
+
+def _setPriority(obj, priority):
+    if priority is None or priority == obj.priority:
+        return
+    priorityName = obj.dmd.convertPriority(priority)
+    log.info("setting priority to %s", priorityName)
+    obj.setPriority(priority)
+
+
+def _setComments(obj, comments):
+    if comments is None or comments == obj.comments:
+        return
+    log.info("setting comments to %s", comments)
+    obj.comments = comments
+
+
+def _setLocation(obj, location):
+    if location is None:
+        return
+    log.info("setting location to %r", location)
+    obj.setLocation(location)
+
+
+def _setGroups(obj, groups):
+    if groups is None:
+        return
+    log.info("setting group %r", groups)
+    obj.setGroups(groups)
+
+
+def _setSystems(obj, systems):
+    if systems is None:
+        return
+    log.info("setting system %r", systems)
+    obj.setSystems(systems)
+
+
+def _setPerformanceMonitor(obj, monitor):
+    if monitor is None or monitor == obj.getPerformanceServerName():
+        return
+    log.info("setting performance monitor to %r", monitor)
+    obj.setPerformanceMonitor(monitor)
+
+
+def _getCollectionDaemonsFromTemplates(templates):
+    daemons = set()
+    if not templates:
+        return daemons
+    datasources = itertools.chain.from_iterable(
+        template.getRRDDataSources() for template in templates
+    )
+    for ds in datasources:
+        if isPythonDataSource(ds):
+            daemon = _sourcetype_to_collector_map["Python"]
+        else:
+            daemon = _sourcetype_to_collector_map.get(ds.sourcetype)
+        if daemon:
+            daemons.add(daemon)
+
+
+def _noop(v=None):
+    return
+
+
+def _identity(v):
+    return v

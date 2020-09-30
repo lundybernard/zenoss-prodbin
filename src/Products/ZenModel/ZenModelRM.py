@@ -7,50 +7,46 @@
 #
 ##############################################################################
 
-
-__doc__ = """ZenModelRM
-
-$Id: ZenModelRM.py,v 1.50 2004/05/10 20:49:09 edahl Exp $"""
-
-__version__ = "$Revision: 1.50 $"[11:-2]
-
 import os
 import time
 
+from AccessControl import ClassSecurityInfo
+from Acquisition import aq_base
 from DateTime import DateTime
 from OFS.History import Historical
-from Acquisition import aq_base
-from AccessControl import ClassSecurityInfo
-from ZPublisher.Converters import type_converters
-from zope.interface import implements
 from OFS.interfaces import IItem
+from zope.interface import implementer
+from ZPublisher.Converters import type_converters
 
-from ZenModelBase import ZenModelBase, iscustprop
-from ZenPacker import ZenPacker
-from Products.ZenWidgets import messaging
-from Products.ZenUtils.Utils import getSubObjects, zenPath
 from Products.ZenRelations.ImportRM import ImportRM
 from Products.ZenRelations.RelationshipManager import RelationshipManager
-from Products.ZenModel.ZenossSecurity import (
-    ZEN_MANAGE_DMD,
-    ZEN_VIEW,
-    ZEN_CHANGE_DEVICE_PRODSTATE
-)
-
-
+from Products.ZenUtils.Utils import getSubObjects, zenPath
+from Products.ZenWidgets import messaging
 from Products.Zuul.catalog.indexable import BaseIndexable
 from Products.Zuul.catalog.interfaces import IModelCatalogTool
 
-class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseIndexable):
+from .ZenModelBase import ZenModelBase, iscustprop
+from .ZenPacker import ZenPacker
+from .ZenossSecurity import (
+    ZEN_CHANGE_DEVICE_PRODSTATE,
+    ZEN_MANAGE_DMD,
+    ZEN_VIEW,
+)
+
+
+@implementer(IItem)
+class ZenModelRM(
+    ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseIndexable
+):
     """
     Base class for all Persistent classes that have relationships.
     Provides RelationshipManagement, Customized PropertyManagement,
     Catalog Indexing, and Historical change tracking.
     """
-    implements(IItem)
-    meta_type = 'ZenModelRM'
 
-    default_catalog = ''
+    meta_type = "ZenModelRM"
+
+    default_catalog = ""
 
     isInTree = 0  # should this class show in left nav tree
 
@@ -69,12 +65,14 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
             self._created_timestamp = self.createdTime.timeTime()
             return self._created_timestamp
 
-    security.declareProtected(ZEN_MANAGE_DMD, 'setTitle')
+    security.declareProtected(ZEN_MANAGE_DMD, "setTitle")
+
     def setTitle(self, title):
         self.title = title
         IModelCatalogTool(self).update(self)
 
-    security.declareProtected(ZEN_MANAGE_DMD, 'rename')
+    security.declareProtected(ZEN_MANAGE_DMD, "rename")
+
     def rename(self, newId, REQUEST=None):
         """Delete device from the DMD"""
         renamed = False
@@ -86,16 +84,16 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
         if REQUEST:
             if renamed:
                 messaging.IMessageSender(self).sendToBrowser(
-                    'Object Renamed',
-                    "Object %s was renamed to %s." % (oldId, newId)
+                    "Object Renamed",
+                    "Object %s was renamed to %s." % (oldId, newId),
                 )
             return self.callZenScreen(REQUEST, renamed)
         return renamed
 
-    security.declareProtected(ZEN_MANAGE_DMD, 'zmanage_editProperties')
+    security.declareProtected(ZEN_MANAGE_DMD, "zmanage_editProperties")
+
     def zmanage_editProperties(self, REQUEST=None, redirect=False, audit=True):
-        """Edit a ZenModel object and return its proper page template
-        """
+        """Edit a ZenModel object and return its proper page template"""
         redirect = False
         if "newId" in REQUEST.form:
             redirect = self.rename(REQUEST.form["newId"])
@@ -103,9 +101,10 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
             self, REQUEST, redirect, audit
         )
 
-    security.declareProtected(ZEN_MANAGE_DMD, 'zmanage_addProperty')
+    security.declareProtected(ZEN_MANAGE_DMD, "zmanage_addProperty")
+
     def zmanage_addProperty(
-        self, id, value, type, label, visible, prefix='c', REQUEST=None
+        self, id, value, type, label, visible, prefix="c", REQUEST=None
     ):
         """Add a new property via the web.
         Sets a new property with the given id, type, and value.
@@ -120,61 +119,61 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
         if not iscustprop(id):
             if REQUEST:
                 messaging.IMessageSender(self).sendToBrowser(
-                    'Error',
+                    "Error",
                     "Custom property name should be in this format: cProperty",
-                    priority=messaging.WARNING
+                    priority=messaging.WARNING,
                 )
                 return self.callZenScreen(REQUEST)
         elif self.hasProperty(id):
             if REQUEST:
                 messaging.IMessageSender(self).sendToBrowser(
-                    'Error',
+                    "Error",
                     "Custom property: %s already exists" % id,
-                    priority=messaging.WARNING
+                    priority=messaging.WARNING,
                 )
                 return self.callZenScreen(REQUEST)
         else:
             self._setProperty(id, value, type, label, visible)
             if REQUEST:
                 messaging.IMessageSender(self).sendToBrowser(
-                    'Property Added',
-                    "Custom property: %s added" % id
+                    "Property Added", "Custom property: %s added" % id
                 )
                 return self.callZenScreen(REQUEST)
 
-    security.declareProtected(ZEN_MANAGE_DMD, 'zmanage_exportObject')
+    security.declareProtected(ZEN_MANAGE_DMD, "zmanage_exportObject")
+
     def zmanage_exportObject(self, context=None, REQUEST=None):
-        """Export objects to specific locations.
-        """
+        """Export objects to specific locations."""
         if not context:
             context = self
         redirect = False
-        dest = 'filesystem'
+        dest = "filesystem"
         if REQUEST:
-            dest = REQUEST.form.get('dest')
-        fileBase = '%s_%s.xml' % (context.getNodeName(), context.id)
-        if dest == 'filesystem':
-            filename = zenPath('export', fileBase)
+            dest = REQUEST.form.get("dest")
+        fileBase = "%s_%s.xml" % (context.getNodeName(), context.id)
+        if dest == "filesystem":
+            filename = zenPath("export", fileBase)
             msg = "Item has been exported to: %s at " % filename
-        elif dest == 'zenossdotnet':
+        elif dest == "zenossdotnet":
             # create temp file
-            filename = ''
+            filename = ""
             # get https URL for user space at Zenoss.net
-            url = 'https://%s:%s@zenoss.net/'
+            url = "https://%s:%s@zenoss.net/"
             # build XML-RPC proxy object for publishing to Zenoss.net
             import xmlrpclib
+
             server = xmlrpclib.ProxyServer(url)
             msg = "Item has been exported to: %s. Note that you will need to "
             msg += "login at Zenoss.net and publish this template in order to "
             msg += "share it with others. Exported at "
             msg %= url
         # open file
-        exportFile = open(filename, 'w+')
+        exportFile = open(filename, "w+")
         # export object to file
         context.exportXml(exportFile)
         # cleanup
         exportFile.close()
-        if dest == 'zenossdotnet':
+        if dest == "zenossdotnet":
             # get data
             exportFile = open(filename)
             dataToSend = exportFile.read()
@@ -182,11 +181,11 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
             # push data up to Zenoss.net
             server.postUserTemplate(dataToSend)
         if REQUEST:
-            messaging.IMessageSender(self).sendToBrowser(
-                'Export Object', msg)
+            messaging.IMessageSender(self).sendToBrowser("Export Object", msg)
             return self.callZenScreen(REQUEST, redirect)
 
-    security.declareProtected(ZEN_MANAGE_DMD, 'zmanage_importObjects')
+    security.declareProtected(ZEN_MANAGE_DMD, "zmanage_importObjects")
+
     def zmanage_importObjects(self, context=None, REQUEST=None):
         """Import an XML file as the Zenoss objects and properties it
         represents.
@@ -198,9 +197,9 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
         if not context:
             context = self.getPhysicalRoot()
         # get the submitted data
-        filenames = REQUEST.form.get('filenames')
-        urlnames = REQUEST.form.get('urlnames')
-        doDelete = REQUEST.form.get('dodelete')
+        filenames = REQUEST.form.get("filenames")
+        urlnames = REQUEST.form.get("urlnames")
+        doDelete = REQUEST.form.get("dodelete")
         xmlfiles = []
         for collection in [filenames, urlnames]:
             if collection:
@@ -216,32 +215,33 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
                 os.unlink(xmlfile)
         if REQUEST:
             messaging.IMessageSender(self).sendToBrowser(
-                'Import Objects', 'Objects imported')
+                "Import Objects", "Objects imported"
+            )
             return self.callZenScreen(REQUEST)
 
-    security.declareProtected(ZEN_MANAGE_DMD, 'zmanage_importObject')
+    security.declareProtected(ZEN_MANAGE_DMD, "zmanage_importObject")
+
     def zmanage_importObject(self, REQUEST=None):
-        """Import objects into Zenoss.
-        """
+        """Import objects into Zenoss."""
         pass
 
-    security.declareProtected(ZEN_MANAGE_DMD, 'zmanage_delProperties')
+    security.declareProtected(ZEN_MANAGE_DMD, "zmanage_delProperties")
+
     def zmanage_delProperties(self, ids=(), REQUEST=None):
-        """Delete properties from an object.
-        """
+        """Delete properties from an object."""
         for id in ids:
             self._delProperty(id)
         if REQUEST:
             messaging.IMessageSender(self).sendToBrowser(
-                'Properties Deleted',
-                'Properties %s have been deleted' % (', '.join(ids))
+                "Properties Deleted",
+                "Properties %s have been deleted" % (", ".join(ids)),
             )
             return self.callZenScreen(REQUEST)
 
-    security.declareProtected(ZEN_MANAGE_DMD, 'zmanage_delObjects')
+    security.declareProtected(ZEN_MANAGE_DMD, "zmanage_delObjects")
+
     def zmanage_delObjects(self, ids=(), relation="", REQUEST=None):
-        """Delete objects from this object or one of its relations.
-        """
+        """Delete objects from this object or one of its relations."""
         target = self
         if relation:
             target = self._getOb(relation)
@@ -249,12 +249,13 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
             target._delObject(id)
         if REQUEST:
             messaging.IMessageSender(self).sendToBrowser(
-                'Objects Deleted',
-                'Objects %s have been deleted' % (', '.join(ids))
+                "Objects Deleted",
+                "Objects %s have been deleted" % (", ".join(ids)),
             )
             return self.callZenScreen(REQUEST)
 
-    security.declareProtected(ZEN_VIEW, 'getDmdKey')
+    security.declareProtected(ZEN_VIEW, "getDmdKey")
+
     def getDmdKey(self):
         """
         Hook to get the name of an object.  Usually its self.getId() but is
@@ -267,14 +268,16 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
         """
         return self.getId()
 
-    security.declareProtected(ZEN_VIEW, 'primarySortKey')
+    security.declareProtected(ZEN_VIEW, "primarySortKey")
+
     def primarySortKey(self):
         """
         Hook for the value used to sort this object.  Defaults to self.getId().
         """
         return self.titleOrId()
 
-    security.declareProtected(ZEN_VIEW, 'viewName')
+    security.declareProtected(ZEN_VIEW, "viewName")
+
     def viewName(self):
         return self.titleOrId()
 
@@ -290,11 +293,11 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
 
     def getCreatedTimeString(self):
         """return the creation time as a string"""
-        return self.createdTime.strftime('%Y/%m/%d %H:%M:%S')
+        return self.createdTime.strftime("%Y/%m/%d %H:%M:%S")
 
     def getModificationTimeString(self):
         """return the modification time as a string"""
-        return self.bobobase_modification_time().strftime('%Y/%m/%d %H:%M:%S')
+        return self.bobobase_modification_time().strftime("%Y/%m/%d %H:%M:%S")
 
     def changePythonClass(self, newPythonClass, container):
         """change the python class of a persistent object"""
@@ -312,7 +315,7 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
                 setObject(nobj, sobj.id, sobj)
         nobj.buildRelations()  # build out any missing relations
         # copy properties to new object
-        noprop = getattr(nobj, 'zNoPropertiesCopy', [])
+        noprop = getattr(nobj, "zNoPropertiesCopy", [])
         for name in nobj.getPropertyNames():
             if (
                 getattr(self, name, None)
@@ -335,8 +338,8 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
             return False
 
         return bool(
-            self.isManager() or
-            self.checkRemotePerm(ZEN_CHANGE_DEVICE_PRODSTATE, self)
+            self.isManager()
+            or self.checkRemotePerm(ZEN_CHANGE_DEVICE_PRODSTATE, self)
         )
 
     def creator(self):
@@ -348,9 +351,9 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
         """
         users = []
         for user, roles in self.get_local_roles():
-            if 'Owner' in roles:
+            if "Owner" in roles:
                 users.append(user)
-        return ', '.join(users)
+        return ", ".join(users)
 
     def index_object(self, idxs=None):
         """A common method to allow Findables to index themselves."""
@@ -370,13 +373,13 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
         """
         if obj is None:
             obj = self
-        if hasattr(aq_base(obj), 'index_object'):
+        if hasattr(aq_base(obj), "index_object"):
             obj.index_object()
-        if hasattr(aq_base(obj), 'objectValues'):
+        if hasattr(aq_base(obj), "objectValues"):
             sub = obj.objectValues()
             for item in sub:
                 self.reindex_all(item)
-        return 'done!'
+        return "done!"
 
     def findChild(self, path):
         """
@@ -388,6 +391,6 @@ class ZenModelRM(ZenModelBase, RelationshipManager, Historical, ZenPacker, BaseI
         'Devices/Server/Linux', whereas this method will throw an exception.
         """
         child = self
-        for id in path.split('/'):
+        for id in path.split("/"):
             child = child._getOb(id)
         return child
