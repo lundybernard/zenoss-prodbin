@@ -15,7 +15,7 @@ from __future__ import absolute_import, print_function
 
 import os
 
-from Products.ZenUtils.PkgResources import pkg_resources
+import pkg_resources
 
 from Products.ZenModel.ZenPackLoader import ZPLDaemons
 
