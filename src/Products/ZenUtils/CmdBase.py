@@ -39,12 +39,8 @@ from .GlobalConfig import (
     _convertConfigLinesToArguments,
     getGlobalConfiguration,
 )
-from .Utils import (
-    getAllParserOptionsGen,
-    load_config_override,
-    unused,
-    zenPath,
-)
+from .path import zenPath
+from .Utils import getAllParserOptionsGen, load_config_override, unused
 
 
 # List of options to not include when generating a config file.

@@ -58,16 +58,10 @@ from Products.ZenModel.ZenPackLoader import CONFIG_FILE, CONFIG_SECTION_ABOUT
 from Products.ZenModel.ZVersion import VERSION
 from Products.Zuul import getFacade
 
+from .path import binPath, prodbin_products, varPath, zenPath
 from .ZenPackInstallFilter import IZenPackInstallFilter
 from .ZenScriptBase import ZenScriptBase
-from .Utils import (
-    binPath,
-    cleanupSkins,
-    get_temp_dir,
-    prodbin_products,
-    varPath,
-    zenPath,
-)
+from .Utils import cleanupSkins, get_temp_dir
 
 log = logging.getLogger("zen.zenpack")
 

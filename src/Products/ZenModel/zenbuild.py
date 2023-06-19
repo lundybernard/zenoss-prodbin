@@ -29,7 +29,7 @@ from Products.ZenUtils.AccountLocker.AccountLocker import (
 )
 from Products.ZenUtils.Auth0.Auth0 import setup as auth0_setup
 from Products.ZenUtils.CmdBase import CmdBase
-from Products.ZenUtils.Utils import zenPath
+from Products.ZenUtils.path import zenPath
 
 
 class zenbuild(CmdBase):

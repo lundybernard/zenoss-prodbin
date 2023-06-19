@@ -44,15 +44,8 @@ from Products.Zuul.utils import CatalogLoggingFilter
 
 from . import zenpack as oldzenpack
 from .events import paused
-from .Utils import (
-    atomicWrite,
-    binPath,
-    cleanupSkins,
-    getObjByPath,
-    prodbin_products,
-    varPath,
-    zenPath,
-)
+from .path import binPath, prodbin_products, varPath, zenPath
+from .Utils import atomicWrite, cleanupSkins, getObjByPath
 from .ZenScriptBase import ZenScriptBase
 
 log = logging.getLogger("zen.ZenPackCMD")
