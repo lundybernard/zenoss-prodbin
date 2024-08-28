@@ -206,10 +206,11 @@ class ZenossAllJs(JavaScriptSrcViewlet):
 @implementer(IJavaScriptSrcViewlet)
 class ExtAllJs(JavaScriptSrcViewlet):
     def update(self):
-        if Globals.DevelopmentMode:
-            self.path = "/++resource++extjs/ext-all-dev.js"
-        else:
-            self.path = "/++resource++extjs/ext-all.js"
+        # if Globals.DevelopmentMode:
+        #     self.path = "/++resource++extjs/ext-all-dev.js"
+        # else:
+        #     self.path = "/++resource++extjs/ext-all.js"
+        self.path = "/++resource++extjs/ext-all.js"
 
 
 class FireFoxExtCompat(JavaScriptSnippet):
