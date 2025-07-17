@@ -614,6 +614,8 @@ class ZenPackCmd(ZenScriptBase):
                 # fail too, but that's OK, because it will just try again
                 return False
 
+        from . import ZenPackCmd as EggPackCmd
+
         sortedPacks = toposort_flatten(zpsToSort)
         triedReversing = False
         fixedSomething = len(sortedPacks) > 0
