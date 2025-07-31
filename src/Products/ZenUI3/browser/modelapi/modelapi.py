@@ -467,6 +467,6 @@ class QFrameworkDaemons(BaseApiView):
     def _services(self):
         return (
             ('zenMWDs', 'zenmwd'),
-            ('zenNotifys', 'zennotify'),
-            ('zenNotifyWorkers', 'zennotifyworker'),
+            ('zenNotifys', 'zenNotify'),
+            ('zenNotifyWorkers', 'zenNotifyWorker'),
         )
