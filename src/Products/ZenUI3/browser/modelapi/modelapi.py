@@ -391,6 +391,7 @@ class Writer(BaseApiView):
         writers = super(Writer, self)._getServices("writer")
         return writers
 
+
 class ImpactDaemons(BaseApiView):
     """
     This view emits the Impact daemon services
@@ -401,6 +402,7 @@ class ImpactDaemons(BaseApiView):
             ('impacts', 'Impact'),
             ('zenImpactStates', 'zenimpactstate'),
         )
+
 
 class Memcached(BaseApiView):
 
@@ -432,6 +434,7 @@ class Memcached(BaseApiView):
         memcacheds += self._getServiceInstances('memcached-session')
         return memcacheds
 
+
 class ConfigCacheDaemons(BaseApiView):
     """
     This view emits info for configcache services: invalidator, builders, and manager
@@ -444,6 +447,7 @@ class ConfigCacheDaemons(BaseApiView):
             ('configCacheManagers', 'manager'),
         )
 
+
 class ZenjobsMonitor(BaseApiView):
     """
     This view emits info for zenjobs-monitor
@@ -454,3 +458,15 @@ class ZenjobsMonitor(BaseApiView):
             ('zenjobsMonitors', 'zenjobs-monitor'),
         )
 
+
+class QFrameworkDaemons(BaseApiView):
+    """
+    This view emits info for zenmwd, zennotify, and zennotifyworker
+    """
+    @property
+    def _services(self):
+        return (
+            ('zenMWDs', 'zenmwd'),
+            ('zenNotifys', 'zennotify'),
+            ('zenNotifyWorkers', 'zennotifyworker'),
+        )
