@@ -233,7 +233,7 @@ class SMIDumpTool(object):
         output = ""
         error = ""
         if in_subprocess:
-            process = Popen(cmd, stdout=PIPE, stderr=PIPE, close_fds=True)
+            process = Popen(cmd, stdout=PIPE, stderr=PIPE, close_fds=False)
             output, error = process.communicate()  # blocks until done
             rc = process.poll()
         else:
