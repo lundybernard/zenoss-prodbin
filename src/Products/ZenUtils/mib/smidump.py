@@ -1,3 +1,4 @@
+import os
 import logging
 import re
 
@@ -5,6 +6,8 @@ from collections import OrderedDict
 from itertools import chain
 from tempfile import NamedTemporaryFile
 from subprocess import Popen, PIPE
+
+from twisted.web.html import output
 
 MIB_METADATA = re.compile(
     r"(?:\A|})[^}]+?FILENAME\s+=\s+\"(.+?)\".*?MIB\s+=\s+",
@@ -216,7 +219,7 @@ class SMIDumpTool(object):
         if config:
             self._cmd.extend(["--config", config.filename])
 
-    def run(self, *mibfiles):
+    def run(self, *mibfiles, in_subprocess=False):
         """Takes the given MIBFile objects and returns a string containing
         the output of the 'smidump -f python' command.  If multiple MIBFiles
         are given, the returned string will contain the MIB definitions from
@@ -227,14 +230,19 @@ class SMIDumpTool(object):
         if log.getEffectiveLevel() <= logging.DEBUG:
             log.debug("Executing command: %s", ' '.join(cmd))
 
-        process = Popen(cmd, stdout=PIPE, stderr=PIPE, close_fds=True)
-        output, error = process.communicate()  # blocks until done
-        rc = process.poll()
+        output = ""
+        error = ""
+        if in_subprocess:
+            process = Popen(cmd, stdout=PIPE, stderr=PIPE, close_fds=True)
+            output, error = process.communicate()  # blocks until done
+            rc = process.poll()
+        else:
+            rc = os.system(" ".join(cmd))
 
         if rc != 0:
             raise RuntimeError("smidump failed:\n" + error.strip())
 
-        if log.getEffectiveLevel() <= logging.DEBUG:
+        if log.getEffectiveLevel() <= logging.DEBUG and error:
             for line in (ln.strip() for ln in error.split("\n")):
                 if line:
                     log.warn("[smidump] %s", line)

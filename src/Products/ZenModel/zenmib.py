@@ -114,7 +114,11 @@ class MIBFileProcessor(BaseProcessor):
         self._mibsdir = options.mibsdir
         self._mibfiles = mibfiles
 
-    def run(self):
+    def run(self, in_subprocess=False):
+        """
+        By default, we execute command in the same process as it's already launched by subprocess using zenjobs.
+        In case of manually usage user should explicitly pass --inSubprocess cli arg for zenmib
+        """
         mibfiles = self._getMIBFiles()
         paths = [zenPath("share", "mibs"), self._mibdepsdir]
 
@@ -130,7 +134,7 @@ class MIBFileProcessor(BaseProcessor):
             tool = SMIDumpTool(config=cfg)
             # returns string containing all the MIB definitions found
             # in the provided set of MIBFile objects.
-            dump = tool.run(*mibfiles)
+            dump = tool.run(*mibfiles, in_subprocess=in_subprocess)
             # for defn in dump.definitions:
             #     print defn
             if dump:
@@ -207,7 +211,7 @@ class ZenMib(ZenScriptBase):
                     self.log, self.dmd, self.options, self.args
                 )
 
-            processor.run()
+            processor.run(in_subprocess=self.options.in_subprocess)
 
             if not self.options.nocommit:
                 transaction.commit()
@@ -317,6 +321,13 @@ class ZenMib(ZenScriptBase):
             action="store_true",
             default=False,
             help="Remove zeros found in the middle of the OID",
+        )
+        self.parser.add_option(
+            "--inSubprocess",
+            dest="in_subprocess",
+            action="store_true",
+            default=False,
+            help="Run the command in a subprocess (default: False)",
         )
 
 
