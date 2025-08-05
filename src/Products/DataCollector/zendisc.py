@@ -11,15 +11,6 @@
 Scan networks and routes looking for devices to add to the ZODB
 """
 
-# IMPORTANT! The import of the pysamba.twisted.reactor module should come
-# before any other libraries that might possibly use twisted. This will
-# ensure that the proper WmiReactor is installed before anyone else grabs
-# a reference to the wrong reactor.
-try:
-    import pysamba.twisted.reactor  # noqa F401
-except ImportError:
-    pass
-
 import logging
 import socket
 
