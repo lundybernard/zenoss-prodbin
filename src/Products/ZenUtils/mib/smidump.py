@@ -7,8 +7,6 @@ from itertools import chain
 from tempfile import NamedTemporaryFile
 from subprocess import Popen, PIPE
 
-from twisted.web.html import output
-
 MIB_METADATA = re.compile(
     r"(?:\A|})[^}]+?FILENAME\s+=\s+\"(.+?)\".*?MIB\s+=\s+",
     re.DOTALL | re.MULTILINE
@@ -219,7 +217,7 @@ class SMIDumpTool(object):
         if config:
             self._cmd.extend(["--config", config.filename])
 
-    def run(self, *mibfiles, in_subprocess=False):
+    def run(self, *mibfiles, in_main_process=False):
         """Takes the given MIBFile objects and returns a string containing
         the output of the 'smidump -f python' command.  If multiple MIBFiles
         are given, the returned string will contain the MIB definitions from
@@ -232,7 +230,7 @@ class SMIDumpTool(object):
 
         output = ""
         error = ""
-        if in_subprocess:
+        if not in_main_process:
             process = Popen(cmd, stdout=PIPE, stderr=PIPE, close_fds=False)
             output, error = process.communicate()  # blocks until done
             rc = process.poll()
