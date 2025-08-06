@@ -1,6 +1,6 @@
 ##############################################################################
 #
-# Copyright (C) Zenoss, Inc. 2019, all rights reserved.
+# Copyright (C) Zenoss, Inc. 2019, 2025 all rights reserved.
 #
 # This content is made available according to terms specified in
 # License.zenoss under the directory where your Zenoss product is installed.
@@ -36,7 +36,6 @@ from .utils.log import (
     LoggingProxy,
     TaskLogFileHandler,
 )
-from ..Zuul.utils import try_unbrain
 
 _default_config = {
     "version": 1,
