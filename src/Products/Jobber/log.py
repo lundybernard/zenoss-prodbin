@@ -36,6 +36,7 @@ from .utils.log import (
     LoggingProxy,
     TaskLogFileHandler,
 )
+from ..Zuul.utils import try_unbrain
 
 _default_config = {
     "version": 1,
@@ -362,10 +363,13 @@ class LogLevelUpdater(object):
 
     @classmethod
     def start(cls):
-        logfilename = logging._handlers.get("main").baseFilename
-        name = (
-            logfilename.rsplit("/", 1)[-1].rsplit(".", 1)[0].replace("-", "_")
-        )
+        try:
+            logfilename = logging._handlers.get("main").baseFilename
+            name = (
+                logfilename.rsplit("/", 1)[-1].rsplit(".", 1)[0].replace("-", "_")
+            )
+        except AttributeError:
+            name = "zenjobs"
         if cls.instance is None:
             cls.instance = _LogLevelUpdaterThread(_loglevel_confs[name])
             cls.instance.start()
