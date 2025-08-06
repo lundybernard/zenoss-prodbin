@@ -7,22 +7,6 @@
 #
 ##############################################################################
 
-# IMPORTANT! The import of the pysamba.twisted.reactor module should come
-# before any other libraries that might possibly use twisted. This will
-# ensure that the proper WmiReactor is installed before anyone else grabs a
-# reference to the wrong reactor.
-try:
-    import pysamba.twisted.reactor  # noqa F401
-    from ZenPacks.zenoss.WindowsMonitor.WMIClient import WMIClient
-    from ZenPacks.zenoss.WindowsMonitor.utils import (
-        addNTLMv2Option,
-        setNTLMv2Auth,
-    )
-
-    USE_WMI = True
-except ImportError:
-    USE_WMI = False
-
 import cPickle as pickle
 import gzip
 import os
@@ -333,12 +317,6 @@ class ZenModeler(PBDaemon):
         clientTimeout = getattr(device, "zCollectorClientTimeout", 180)
         ip = device.manageIp
         timeout = clientTimeout + time.time()
-        if USE_WMI:
-            self.wmiCollect(device, ip, timeout)
-        else:
-            self.log.debug(
-                "skipping WMI-based collection, PySamba zenpack not installed"
-            )
         self.log.info(
             "Collect on device %s for collector loop #%03d",
             device.id,
@@ -348,38 +326,6 @@ class ZenModeler(PBDaemon):
         self.cmdCollect(device, ip, timeout)
         self.snmpCollect(device, ip, timeout)
         self.portscanCollect(device, ip, timeout)
-
-    def wmiCollect(self, device, ip, timeout):
-        """
-        Start the Windows Management Instrumentation (WMI) collector
-
-        @param device: device to collect against
-        @type device: string
-        @param ip: IP address of device to collect against
-        @type ip: string
-        @param timeout: timeout before failing the connection
-        @type timeout: integer
-        """
-        if self.options.nowmi:
-            return
-        client = None
-        try:
-            plugins = self.selectPlugins(device, "wmi")
-            if not plugins:
-                self.log.info("No WMI plugins found for %s", device.id)
-                return
-            if self.checkCollection(device):
-                self.log.info("WMI collector method for device %s", device.id)
-                self.log.info(
-                    "plugins: %s", ", ".join(p.name() for p in plugins)
-                )
-                client = WMIClient(device, self, plugins)
-            if not client or not plugins:
-                self.log.warn("WMI collector creation failed")
-                return
-        except Exception:
-            self.log.exception("Error opening WMI collector")
-        self.addClient(client, timeout, "WMI", device.id)
 
     def pythonCollect(self, device, ip, timeout):
         """
@@ -1114,13 +1060,6 @@ class ZenModeler(PBDaemon):
             help="Don't fork threads for processing",
         )
         self.parser.add_option(
-            "--nowmi",
-            dest="nowmi",
-            action="store_true",
-            default=not USE_WMI,
-            help="Do not execute WMI plugins",
-        )
-        self.parser.add_option(
             "--parallel",
             dest="parallel",
             type="int",
@@ -1234,8 +1173,6 @@ class ZenModeler(PBDaemon):
         addWorkerOptions(self.parser)
 
         TCbuildOptions(self.parser, self.usage)
-        if USE_WMI:
-            addNTLMv2Option(self.parser)
 
     def processOptions(self):
         """
@@ -1265,9 +1202,6 @@ class ZenModeler(PBDaemon):
                     'startat option "%s" was invalid, carrying on anyway',
                     self.options.startat,
                 )
-
-        if USE_WMI:
-            setNTLMv2Auth(self.options)
 
         configFilter = parseWorkerOptions(self.options.__dict__, self.log)
         if configFilter:
