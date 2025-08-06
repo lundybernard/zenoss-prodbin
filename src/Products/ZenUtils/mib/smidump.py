@@ -217,7 +217,7 @@ class SMIDumpTool(object):
         if config:
             self._cmd.extend(["--config", config.filename])
 
-    def run(self, *mibfiles, in_main_process=False):
+    def run(self, in_main_process=False, *mibfiles):
         """Takes the given MIBFile objects and returns a string containing
         the output of the 'smidump -f python' command.  If multiple MIBFiles
         are given, the returned string will contain the MIB definitions from
