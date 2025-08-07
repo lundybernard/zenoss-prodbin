@@ -1,6 +1,6 @@
 ##############################################################################
 #
-# Copyright (C) Zenoss, Inc. 2019, 2025 all rights reserved.
+# Copyright (C) Zenoss, Inc. 2019, all rights reserved.
 #
 # This content is made available according to terms specified in
 # License.zenoss under the directory where your Zenoss product is installed.
@@ -362,13 +362,10 @@ class LogLevelUpdater(object):
 
     @classmethod
     def start(cls):
-        try:
-            logfilename = logging._handlers.get("main").baseFilename
-            name = (
-                logfilename.rsplit("/", 1)[-1].rsplit(".", 1)[0].replace("-", "_")
-            )
-        except AttributeError:
-            name = "zenjobs"
+        logfilename = logging._handlers.get("main").baseFilename
+        name = (
+            logfilename.rsplit("/", 1)[-1].rsplit(".", 1)[0].replace("-", "_")
+        )
         if cls.instance is None:
             cls.instance = _LogLevelUpdaterThread(_loglevel_confs[name])
             cls.instance.start()
