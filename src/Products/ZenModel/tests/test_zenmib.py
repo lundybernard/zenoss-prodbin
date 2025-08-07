@@ -82,7 +82,7 @@ class TestMIBFileProcessor(BaseTestCase):
         processor = MIBFileProcessor(log, self.dmd, options, [source])
         processor.run()
 
-        mockTool.run.assert_called_with(expectedMIBFile)
+        mockTool.run.assert_called_with(expectedMIBFile, in_main_process=False)
         self._checkResults()
 
     def test_DumpFileProcessor(self):
