@@ -193,7 +193,7 @@ class TestSMIDumpTool(TestCase):
         dump = tool.run(False, mibfile)
         self.assertIsInstance(dump, SMIDump)
         self.mock_popen.assert_called_once_with(
-            expected_cmd, stdout=PIPE, stderr=PIPE, close_fds=True
+            expected_cmd, stdout=PIPE, stderr=PIPE, close_fds=False
         )
 
     @mock.patch("Products.ZenUtils.mib.tests.test_smidump.SMIConfigFile")
@@ -221,7 +221,7 @@ class TestSMIDumpTool(TestCase):
 
         self.assertIsInstance(dump, SMIDump)
         self.mock_popen.assert_called_once_with(
-            expected_cmd, stdout=PIPE, stderr=PIPE, close_fds=True
+            expected_cmd, stdout=PIPE, stderr=PIPE, close_fds=False
         )
 
     def test_cmdline_n_files(self):
@@ -241,7 +241,7 @@ class TestSMIDumpTool(TestCase):
         dump = tool.run(False, mibfile1, mibfile2)
         self.assertIsInstance(dump, SMIDump)
         self.mock_popen.assert_called_once_with(
-            expected_cmd, stdout=PIPE, stderr=PIPE, close_fds=True
+            expected_cmd, stdout=PIPE, stderr=PIPE, close_fds=False
         )
 
     def test_cmdline_one_file_n_modules(self):
@@ -260,7 +260,7 @@ class TestSMIDumpTool(TestCase):
         dump = tool.run(False,mibfile)
         self.assertIsInstance(dump, SMIDump)
         self.mock_popen.assert_called_once_with(
-            expected_cmd, stdout=PIPE, stderr=PIPE, close_fds=True
+            expected_cmd, stdout=PIPE, stderr=PIPE, close_fds=False
         )
 
     def test_cmdline_n_files_n_modules(self):
@@ -288,7 +288,7 @@ class TestSMIDumpTool(TestCase):
         dump = tool.run(False, mockMibFile1, mockMibFile2)
         self.assertIsInstance(dump, SMIDump)
         self.mock_popen.assert_called_once_with(
-            expected_cmd, stdout=PIPE, stderr=PIPE, close_fds=True
+            expected_cmd, stdout=PIPE, stderr=PIPE, close_fds=False
         )
 
     def test_cmd_error(self):
