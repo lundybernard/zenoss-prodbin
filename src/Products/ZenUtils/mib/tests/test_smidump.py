@@ -190,7 +190,7 @@ class TestSMIDumpTool(TestCase):
         ]
 
         tool = SMIDumpTool()
-        dump = tool.run(in_main_process=False, mibfile)
+        dump = tool.run(False, mibfile)
         self.assertIsInstance(dump, SMIDump)
         self.mock_popen.assert_called_once_with(
             expected_cmd, stdout=PIPE, stderr=PIPE, close_fds=True
@@ -217,7 +217,7 @@ class TestSMIDumpTool(TestCase):
 
         with mockConfig as cfg:
             tool = SMIDumpTool(config=cfg)
-            dump = tool.run(in_main_process=False, mibfile)
+            dump = tool.run(False, mibfile)
 
         self.assertIsInstance(dump, SMIDump)
         self.mock_popen.assert_called_once_with(
@@ -238,7 +238,7 @@ class TestSMIDumpTool(TestCase):
         ]
 
         tool = SMIDumpTool()
-        dump = tool.run(in_main_process=False, mibfile1, mibfile2)
+        dump = tool.run(False, mibfile1, mibfile2)
         self.assertIsInstance(dump, SMIDump)
         self.mock_popen.assert_called_once_with(
             expected_cmd, stdout=PIPE, stderr=PIPE, close_fds=True
@@ -257,7 +257,7 @@ class TestSMIDumpTool(TestCase):
         expected_cmd.extend(mibfile.module_names[:-1])
 
         tool = SMIDumpTool()
-        dump = tool.run(in_main_process=False, mibfile)
+        dump = tool.run(False,mibfile)
         self.assertIsInstance(dump, SMIDump)
         self.mock_popen.assert_called_once_with(
             expected_cmd, stdout=PIPE, stderr=PIPE, close_fds=True
@@ -285,7 +285,7 @@ class TestSMIDumpTool(TestCase):
         ]
 
         tool = SMIDumpTool()
-        dump = tool.run(in_main_process=False, mockMibFile1, mockMibFile2)
+        dump = tool.run(False, mockMibFile1, mockMibFile2)
         self.assertIsInstance(dump, SMIDump)
         self.mock_popen.assert_called_once_with(
             expected_cmd, stdout=PIPE, stderr=PIPE, close_fds=True
@@ -301,5 +301,5 @@ class TestSMIDumpTool(TestCase):
 
         tool = SMIDumpTool()
         with self.assertRaises(RuntimeError) as ex:
-            tool.run(in_main_process=False, mockMibFile)
+            tool.run(False, mockMibFile)
         self.assertMultiLineEqual(str(ex.exception), "smidump failed:\nboom")
