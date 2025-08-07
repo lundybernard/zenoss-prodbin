@@ -253,6 +253,7 @@ class MibOrganizer(Organizer, ZenPackable):
             savedMIBPath,
             "--path=%s" % mypath,
             "--mibdepsdir=%s" % zenPath(_pathToMIB),
+            "--inMainProcess",
         ]
         return self.dmd.JobManager.addJob(
             SubprocessJob,

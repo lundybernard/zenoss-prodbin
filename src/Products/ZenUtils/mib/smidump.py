@@ -1,3 +1,4 @@
+import os
 import logging
 import re
 
@@ -216,7 +217,7 @@ class SMIDumpTool(object):
         if config:
             self._cmd.extend(["--config", config.filename])
 
-    def run(self, *mibfiles):
+    def run(self, in_main_process=False, *mibfiles):
         """Takes the given MIBFile objects and returns a string containing
         the output of the 'smidump -f python' command.  If multiple MIBFiles
         are given, the returned string will contain the MIB definitions from
@@ -227,14 +228,19 @@ class SMIDumpTool(object):
         if log.getEffectiveLevel() <= logging.DEBUG:
             log.debug("Executing command: %s", ' '.join(cmd))
 
-        process = Popen(cmd, stdout=PIPE, stderr=PIPE, close_fds=True)
-        output, error = process.communicate()  # blocks until done
-        rc = process.poll()
+        output = ""
+        error = ""
+        if not in_main_process:
+            process = Popen(cmd, stdout=PIPE, stderr=PIPE, close_fds=False)
+            output, error = process.communicate()  # blocks until done
+            rc = process.poll()
+        else:
+            rc = os.system(" ".join(cmd))
 
         if rc != 0:
             raise RuntimeError("smidump failed:\n" + error.strip())
 
-        if log.getEffectiveLevel() <= logging.DEBUG:
+        if log.getEffectiveLevel() <= logging.DEBUG and error:
             for line in (ln.strip() for ln in error.split("\n")):
                 if line:
                     log.warn("[smidump] %s", line)
