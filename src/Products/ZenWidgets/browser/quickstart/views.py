@@ -75,11 +75,12 @@ class DeviceAddView(BrowserView):
         devclass = self.context.dmd.Devices.Discovered.primaryAq()
         return "\n".join(devclass.zSnmpCommunities)
 
+    _ALLOWED_PROTOCOLS = ("SSH", "SNMP", "WinRM")
+
     def _assemble_types_list(self):
         """
         Walks all device classes building a list of description/protocol pairs.
         """
-        ALLOWED_PROTOCOLS = ("SSH", "SNMP", "WMI", "WinRM")
         devclass = self.context.dmd.Devices
         orgs = devclass.getSubOrganizers()
         types = []
@@ -105,7 +106,7 @@ class DeviceAddView(BrowserView):
                 ):
                     ptcl = "WinRM"
                 # We only care about orgs with acceptable protocols
-                if ptcl not in ALLOWED_PROTOCOLS:
+                if ptcl not in self._ALLOWED_PROTOCOLS:
                     continue
                 types.append((org.getOrganizerName(), desc, ptcl))
         return types
