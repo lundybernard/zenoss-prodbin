@@ -134,7 +134,7 @@ class MIBFileProcessor(BaseProcessor):
             tool = SMIDumpTool(config=cfg)
             # returns string containing all the MIB definitions found
             # in the provided set of MIBFile objects.
-            dump = tool.run(in_main_process=in_main_process, *mibfiles)
+            dump = tool.run(*mibfiles, in_main_process=in_main_process)
             # for defn in dump.definitions:
             #     print defn
             if dump:
