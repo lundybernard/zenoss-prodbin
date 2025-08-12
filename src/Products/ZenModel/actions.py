@@ -7,67 +7,81 @@
 #
 ##############################################################################
 
-
-from collections import defaultdict
+import logging
 import os
 import re
-from time import strftime, localtime
-import time
 import socket
-import logging
+import time
+
+from collections import defaultdict
+from email.MIMEMultipart import MIMEMultipart
+from email.MIMEText import MIMEText
+from email.Utils import formatdate
 from socket import getaddrinfo
+from time import strftime, localtime
 from traceback import format_exc
-from zope.interface import implements
-from zope.component import getUtilitiesFor
 
 from pynetsnmp import netsnmp
-
 from twisted.internet.protocol import ProcessProtocol
-
-from email.MIMEText import MIMEText
-from email.MIMEMultipart import MIMEMultipart
-from email.Utils import formatdate
-
+from zenoss.protocols.protobufs import zep_pb2
+from zenoss.protocols.protobufs.zep_pb2 import (
+    SEVERITY_CLEAR,
+    SEVERITY_CRITICAL,
+    SEVERITY_DEBUG,
+    SEVERITY_ERROR,
+    SEVERITY_INFO,
+    SEVERITY_WARNING,
+)
+from zope.component import getUtilitiesFor
+from zope.interface import implements
 from zope.tales.tales import CompilerError
 
-from zenoss.protocols.protobufs import zep_pb2
-from Products.ZenEvents.events2.proxy import EventSummaryProxy
-from Products.ZenUtils.Utils import sendEmail
-from Products.Zuul.interfaces.actions import (
-    IEmailActionContentInfo, IPageActionContentInfo,
-    ICommandActionContentInfo, ISnmpTrapActionContentInfo,
-    ISyslogActionContentInfo, ISNMPv3ActionContentInfo
-)
-from Products.Zuul.form.interfaces import IFormBuilder
-from Products.ZenModel.UserSettings import GroupSettings
-from Products.ZenModel.interfaces import (
-    IAction, IProvidesEmailAddresses, IProvidesPagerAddresses,
-    IProcessSignal, INotificationContextProvider,
-)
-from Products.ZenModel.NotificationSubscription import NotificationEventContextWrapper
 from Products.ZenEvents.Event import Event
+from Products.ZenEvents.events2.proxy import EventSummaryProxy
+from Products.ZenUtils.guid.guid import GUIDManager
 from Products.ZenUtils import Utils
 from Products.ZenUtils.IpUtil import getHostByName, isip
-from Products.ZenUtils.guid.guid import GUIDManager
 from Products.ZenUtils.ProcessQueue import ProcessQueue
-from Products.ZenUtils.ZenTales import talEval, InvalidTalesException
 from Products.ZenUtils.Time import convertTimestampToTimeZone, isoToTimestamp
-from zenoss.protocols.protobufs.zep_pb2 import (
-    SEVERITY_CLEAR, SEVERITY_INFO, SEVERITY_DEBUG,
-    SEVERITY_WARNING, SEVERITY_ERROR, SEVERITY_CRITICAL,
+from Products.ZenUtils.Utils import sendEmail
+from Products.ZenUtils.ZenTales import talEval, InvalidTalesException
+from Products.Zuul.form.interfaces import IFormBuilder
+from Products.Zuul.interfaces.actions import (
+    ICommandActionContentInfo,
+    IEmailActionContentInfo,
+    IPageActionContentInfo,
+    ISnmpTrapActionContentInfo,
+    ISNMPv3ActionContentInfo,
+    ISyslogActionContentInfo,
 )
+
+from .interfaces import (
+    IAction,
+    INotificationContextProvider,
+    IProcessSignal,
+    IProvidesEmailAddresses,
+    IProvidesPagerAddresses,
+)
+from .NotificationSubscription import NotificationEventContextWrapper
+from .UserSettings import GroupSettings
 
 log = logging.getLogger("zen.actions")
 
 
-class ActionExecutionException(Exception): pass
-
-class TalesMissingZenossDevice(ActionExecutionException): pass
-
-class BadTalesExpresssion(ActionExecutionException): pass
+class ActionExecutionException(Exception):
+    pass
 
 
-class ActionMissingException(Exception): pass
+class TalesMissingZenossDevice(ActionExecutionException):
+    pass
+
+
+class BadTalesExpresssion(ActionExecutionException):
+    pass
+
+
+class ActionMissingException(Exception):
+    pass
 
 
 class TargetableActionException(ActionExecutionException):
@@ -75,33 +89,45 @@ class TargetableActionException(ActionExecutionException):
         self.action = action
         self.notificationId = notification.id
         self.exceptionTargets = exceptionTargets
+
     def __str__(self):
-        return "Failed {action} for notification {notification} on targets {targets}".format(
+        return (
+            "Failed {action} for notification {notification} on "
+            "targets {targets}"
+        ).format(
             action=self.action.name,
             notification=self.notificationId,
-            targets = ','.join(self.exceptionTargets)
+            targets=",".join(self.exceptionTargets),
         )
 
-DEVICE_TAL = re.compile('\$\{dev[ice]*/([-A-Za-z_.0-9]+)\}')
-NO_ZEN_DEVICE = 'Unable to perform TALES evaluation on "%s" -- no Zenoss device'
+
+DEVICE_TAL = re.compile("\$\{dev[ice]*/([-A-Za-z_.0-9]+)\}")
+NO_ZEN_DEVICE = (
+    'Unable to perform TALES evaluation on "%s" -- no Zenoss device'
+)
 BAD_TALES = 'Unable to perform TALES evaluation on "%s"'
+
+
 def processTalSource(source, skipfails=False, **kwargs):
     """
     This function is used to parse fields made available to actions that allow
     for TAL expressions.
     """
-    if not kwargs.get('dev'):
+    if not kwargs.get("dev"):
         hasDevReference = re.search(DEVICE_TAL, source)
         if hasDevReference:
             attributes = hasDevReference.groups()
-            log.error("The TALES string '%s' references ${dev/xxx} %s,"
-                          " but no Zenoss device exists (use ${evt/xxx} fields instead?)",
-                          source, attributes)
+            log.error(
+                "The TALES string '%s' references ${dev/xxx} %s, but "
+                "no Zenoss device exists (use ${evt/xxx} fields instead?)",
+                source,
+                attributes,
+            )
             message = NO_ZEN_DEVICE % source
             raise TalesMissingZenossDevice(message)
 
     try:
-        context = kwargs.get('here')
+        context = kwargs.get("here")
         return talEval(source, context, kwargs, skipfails)
     except CompilerError as ex:
         message = "%s: %s" % (ex, source)
@@ -117,8 +143,9 @@ def _signalToContextDict(signal, zopeurl, notification=None, guidManager=None):
     summary = signal.event
     # build basic event context wrapper for notifications
     if signal.clear:
-        # aged and closed events have clear == True, but they don't have an associated clear event
-        #   spoof a clear event in those cases, so the notification messages contain useful info
+        # Aged and closed events have clear == True, but they don't have an
+        # associated clear event.  Spoof a clear event in those cases, so the
+        # notification messages contain useful info.
         if summary.status == zep_pb2.STATUS_AGED:
             occur = signal.clear_event.occurrence.add()
             occur.summary = "Event aging task aged out the event."
@@ -126,42 +153,59 @@ def _signalToContextDict(signal, zopeurl, notification=None, guidManager=None):
         elif summary.status == zep_pb2.STATUS_CLOSED:
             occur = signal.clear_event.occurrence.add()
 
-            # once an event is in a closed state, the ownerid (current_user_name) is removed
-            # determine who closed the event by extracting the most recent user_name in the event's audit_log
-            last_audit_entry = max(signal.event.audit_log, key=lambda x:x.timestamp)
+            # Once an event is in a closed state, the ownerid
+            # (current_user_name) is removed. Determine who closed the event
+            # by extracting the most recent user_name in the event's audit_log.
+            last_audit_entry = max(
+                signal.event.audit_log, key=lambda x: x.timestamp
+            )
             summary.current_user_name = last_audit_entry.user_name
 
-            occur.summary = "User '" + summary.current_user_name + "' closed the event in the Zenoss event console."
+            occur.summary = (
+                "User '"
+                + summary.current_user_name
+                + "' closed the event in the Zenoss event console."
+            )
             summary.cleared_by_event_uuid = "User action"
         data = NotificationEventContextWrapper(summary, signal.clear_event)
     else:
         data = NotificationEventContextWrapper(summary)
 
     # add urls to event context
-    data['urls']['eventUrl'] = getEventUrl(zopeurl, summary.uuid)
-    data['urls']['ackUrl'] = getAckUrl(zopeurl, summary.uuid)
-    data['urls']['closeUrl'] = getCloseUrl(zopeurl, summary.uuid)
     proxy = EventSummaryProxy(summary)
-    data['urls']['deviceUrl'] = _getBaseDeviceUrl(zopeurl, proxy.DeviceClass, proxy.device)
-    data['urls']['eventsUrl'] = getEventsUrl(zopeurl, proxy.DeviceClass, proxy.device)
-    data['urls']['reopenUrl'] = getReopenUrl(zopeurl, summary.uuid)
-    data['urls']['baseUrl'] = zopeurl
+    urls = data.get("urls", {})
+    urls.update(
+        {
+            "eventUrl": getEventUrl(zopeurl, summary.uuid),
+            "ackUrl": getAckUrl(zopeurl, summary.uuid),
+            "closeUrl": getCloseUrl(zopeurl, summary.uuid),
+            "deviceUrl": _getBaseDeviceUrl(
+                zopeurl, proxy.DeviceClass, proxy.device
+            ),
+            "eventsUrl": getEventsUrl(
+                zopeurl, proxy.DeviceClass, proxy.device
+            ),
+            "reopenUrl": getReopenUrl(zopeurl, summary.uuid),
+            "baseUrl": zopeurl,
+        }
+    )
+    data["urls"] = urls
     # now process all custom processors that might be registered to enhance
     # the event context
     for key, processor in getUtilitiesFor(IProcessSignal):
         data[key] = processor.process(signal)
 
     # Process INotificationContextProvider
-    for key, contextProvider in getUtilitiesFor(INotificationContextProvider):
+    for _, contextProvider in getUtilitiesFor(INotificationContextProvider):
         contextProvider.updateContext(signal, data)
 
     # Add trigger and notification info
     if notification:
-        data['notification']['name'] = notification.titleOrId()
+        data["notification"]["name"] = notification.titleOrId()
     if guidManager:
         trigger = guidManager.getObject(signal.trigger_uuid)
         if trigger:
-            data['trigger']['name'] = trigger.titleOrId()
+            data["trigger"]["name"] = trigger.titleOrId()
 
     return data
 
@@ -169,10 +213,11 @@ def _signalToContextDict(signal, zopeurl, notification=None, guidManager=None):
 def _getBaseUrl(zopeurl):
     if not zopeurl:
         zopeurl = Utils.getDefaultZopeUrl()
-    return '%s/zport/dmd' % zopeurl
+    return "%s/zport/dmd" % zopeurl
+
 
 def _getBaseEventUrl(zopeurl):
-    return '%s/Events' % _getBaseUrl(zopeurl)
+    return "%s/Events" % _getBaseUrl(zopeurl)
 
 
 def _getBaseDeviceUrl(zopeurl, device_class, device_name):
@@ -182,8 +227,11 @@ def _getBaseDeviceUrl(zopeurl, device_class, device_name):
     """
     if device_class and device_name:
         # the device
-        return '%s/Devices%s/devices/%s/devicedetail' % \
-               (_getBaseUrl(zopeurl), device_class, device_name)
+        return "%s/Devices%s/devices/%s/devicedetail" % (
+            _getBaseUrl(zopeurl),
+            device_class,
+            device_name,
+        )
     else:
         # unknown device, just link to infrastructure page
         return "%s/itinfrastructure" % _getBaseUrl(zopeurl)
@@ -196,25 +244,33 @@ def getEventUrl(zopeurl, evid):
 def getEventsUrl(zopeurl, device_class=None, device_name=None):
     if device_class and device_name:
         # events for a specific device
-        return "%s#deviceDetailNav:device_events" % _getBaseDeviceUrl(zopeurl, device_class, device_name)
+        return "%s#deviceDetailNav:device_events" % _getBaseDeviceUrl(
+            zopeurl, device_class, device_name
+        )
     else:
-        #events on all devices
+        # events on all devices
         return "%s/Events/evconsole" % _getBaseUrl(zopeurl)
 
 
 def getAckUrl(zopeurl, evid):
-    return "%s/manage_ackEvents?evids=%s&zenScreenName=viewEvents" %\
-           (_getBaseEventUrl(zopeurl), evid)
+    return "%s/manage_ackEvents?evids=%s&zenScreenName=viewEvents" % (
+        _getBaseEventUrl(zopeurl),
+        evid,
+    )
 
 
 def getCloseUrl(zopeurl, evid):
-    return "%s/manage_deleteEvents?evids=%s&zenScreenName=viewHistoryEvents" %\
-           (_getBaseEventUrl(zopeurl), evid)
+    return (
+        "%s/manage_deleteEvents?evids=%s&zenScreenName=viewHistoryEvents"
+        % (_getBaseEventUrl(zopeurl), evid)
+    )
 
 
 def getReopenUrl(zopeurl, evid):
-    return "%s/manage_undeleteEvents?evids=%s&zenScreenName=viewEvents" %\
-           (_getBaseEventUrl(zopeurl), evid)
+    return "%s/manage_undeleteEvents?evids=%s&zenScreenName=viewEvents" % (
+        _getBaseEventUrl(zopeurl),
+        evid,
+    )
 
 
 class IActionBase(object):
@@ -240,7 +296,7 @@ class IActionBase(object):
         Use the action's interface definition to grab the content pane
         information data and populate the content object.
         """
-        updates = dict()
+        updates = {}
 
         for k in self.actionContentInfo.names(all=True):
             if data.get(k) is not None:
@@ -252,12 +308,17 @@ class IActionBase(object):
         """
         Parse the event data out from the signal
         """
-        # use zopeurl in the zenactiond.conf file if it is defined else use the value from DMD
-        zopeurl = self.options.get('zopeurl')
-        if zopeurl == Utils.getDefaultZopeUrl() and hasattr(self, "zenossHostname"):
+        # Use zopeurl in the zenactiond.conf file if it is defined else use
+        # the value from DMD.
+        zopeurl = self.options.get("zopeurl")
+        if zopeurl == Utils.getDefaultZopeUrl() and hasattr(
+            self, "zenossHostname"
+        ):
             zopeurl = self.zenossHostname
 
-        data = _signalToContextDict(signal, zopeurl, notification, self.guidManager)
+        data = _signalToContextDict(
+            signal, zopeurl, notification, self.guidManager
+        )
         return data
 
 
@@ -275,17 +336,17 @@ class TargetableAction(object):
         """
         pass
 
-    def getTargets(self, notification, signal = None):
+    def getTargets(self, notification, signal=None):
         targets = set()
         for recipient in notification.recipients:
-            if recipient['type'] in ['group', 'user']:
-                guid = recipient['value']
+            if recipient["type"] in ["group", "user"]:
+                guid = recipient["value"]
                 target_obj = self.guidManager.getObject(guid)
                 if target_obj:
                     for target in self.getActionableTargets(target_obj):
                         targets.add(target)
             else:
-                targets.add(recipient['value'])
+                targets.add(recipient["value"])
         return targets
 
     def handleExecuteError(self, exception, notification, target):
@@ -293,22 +354,25 @@ class TargetableAction(object):
         # we need to handle it, but we don't want to prevent other
         # actions from executing on any other targets that may be
         # about to be acted on.
-        msg = 'Error executing action {notification} on {target}'.format(
+        msg = "Error executing action {notification} on {target}".format(
             notification=notification.id,
             target=target,
         )
         log.error(exception)
         log.error(msg)
         traceback = format_exc()
-        event = Event(device="localhost",
-                      eventClass="/App/Failed",
-                      summary=msg,
-                      message=traceback,
-                      severity=SEVERITY_WARNING, component="zenactiond")
+        event = Event(
+            device="localhost",
+            eventClass="/App/Failed",
+            summary=msg,
+            message=traceback,
+            severity=SEVERITY_WARNING,
+            component="zenactiond",
+        )
         notification.dmd.ZenEventManager.sendEvent(event)
 
     def executeBatch(self, notification, signal, targets):
-        raise NotImplemented()
+        raise NotImplementedError()
 
     def execute(self, notification, signal):
         self.setupAction(notification.dmd)
@@ -328,21 +392,25 @@ class TargetableAction(object):
                 for target in targets:
                     try:
                         self.executeOnTarget(notification, signal, target)
-                        log.debug('Done executing action for target: %s', target)
+                        log.debug(
+                            "Done executing action for target: %s", target
+                        )
                     except Exception as e:
                         self.handleExecuteError(e, notification, target)
                         exceptionTargets.append(target)
 
             if exceptionTargets:
-                raise TargetableActionException(self, notification, exceptionTargets)
+                raise TargetableActionException(
+                    self, notification, exceptionTargets
+                )
         else:
             log.debug("No action executed because no targets were found")
 
 
 class EmailAction(IActionBase, TargetableAction):
     implements(IAction)
-    id = 'email'
-    name = 'Email'
+    id = "email"
+    name = "Email"
     actionContentInfo = IEmailActionContentInfo
 
     shouldExecuteInBatch = True
@@ -352,50 +420,64 @@ class EmailAction(IActionBase, TargetableAction):
 
     def configure(self, options):
         super(EmailAction, self).configure(options)
-        self.stripBodyTags = options.get('stripEmailBodyTags', True)
+        self.stripBodyTags = options.get("stripEmailBodyTags", True)
 
     def getDefaultData(self, dmd):
-        return dict(host=dmd.smtpHost,
-                    port=dmd.smtpPort,
-                    user=dmd.smtpUser,
-                    password=dmd.smtpPass,
-                    useTls=dmd.smtpUseTLS,
-                    email_from=dmd.getEmailFrom())
+        return {
+            "host": dmd.smtpHost,
+            "port": dmd.smtpPort,
+            "user": dmd.smtpUser,
+            "password": dmd.smtpPass,
+            "useTls": dmd.smtpUseTLS,
+            "email_from": dmd.getEmailFrom(),
+        }
 
     def setupAction(self, dmd):
         self.guidManager = GUIDManager(dmd)
         self.zenossHostname = dmd.zenossHostname
 
     def _get_recipients_from_signal(self, notification, signal):
-        ''' Check for any recipients passed in the event details '''
-        raw_recipients = self._signalToContextDict(signal, notification)['evt'].details.get('recipients', '')
-        recipients = [ recipient.strip() for recipient in raw_recipients.split(',') if recipient.strip() ]
+        """Check for any recipients passed in the event details"""
+        raw_recipients = self._signalToContextDict(signal, notification)[
+            "evt"
+        ].details.get("recipients", "")
+        recipients = [
+            recipient.strip()
+            for recipient in raw_recipients.split(",")
+            if recipient.strip()
+        ]
         return set(recipients)
 
-    def getTargets(self, notification, signal = None):
-
+    def getTargets(self, notification, signal=None):
         targets = super(EmailAction, self).getTargets(notification)
 
         if signal:
-            signal_targets = self._get_recipients_from_signal(notification, signal)
+            signal_targets = self._get_recipients_from_signal(
+                notification, signal
+            )
             if signal_targets:
-                log.debug('Adding recipients found in the event details: %s', ','.join(signal_targets))
+                log.debug(
+                    "Adding recipients found in the event details: %s",
+                    ",".join(signal_targets),
+                )
                 targets = targets.union(signal_targets)
         return targets
 
     def _encodeBody(self, body):
         """
-        Try to encode the text in the following character sets, if we can't decode it
-        then strip out anything we can't encode in ascii.
+        Try to encode the text in the following character sets, if we can't
+        decode it, then strip out anything we can't encode in ASCII.
         """
-        for body_charset in 'US-ASCII', 'UTF-8':
+        for body_charset in "US-ASCII", "UTF-8":
             try:
-                plain_body = MIMEText(body.encode(body_charset), 'plain', body_charset)
+                plain_body = MIMEText(
+                    body.encode(body_charset), "plain", body_charset
+                )
                 break
             except UnicodeError:
                 pass
         else:
-            plain_body = MIMEText(body.decode('ascii', 'ignore'))
+            plain_body = MIMEText(body.decode("ascii", "ignore"))
         return plain_body
 
     def _targetsByTz(self, notification, signal, targets):
@@ -405,12 +487,18 @@ class EmailAction(IActionBase, TargetableAction):
         """
         tz_targets = {}
         targetsCopy = set(targets)
-        for recipient in self._get_recipients_from_signal(notification, signal):
+        for recipient in self._get_recipients_from_signal(
+            notification, signal
+        ):
             if recipient.email in targets:
-                tz_targets.setdefault(recipient.timezone, set()).add(recipient.email)
+                tz_targets.setdefault(recipient.timezone, set()).add(
+                    recipient.email
+                )
                 targetsCopy.discard(recipient.email)
-        if targetsCopy: #some emails are not from users in the system
-            tz = time.tzname[time.daylight] # get current timezone factoring in daylight saving
+        if targetsCopy:  # some emails are not from users in the system
+            tz = time.tzname[
+                time.daylight
+            ]  # get current timezone factoring in daylight saving
             tz_targets.setdefault(tz, set()).update(targetsCopy)
         return tz_targets
 
@@ -418,9 +506,16 @@ class EmailAction(IActionBase, TargetableAction):
         """
         Convert event timestamp to timezone from user property.
         """
-        return long(isoToTimestamp(convertTimestampToTimeZone(
-                    millis / 1000, timezone, "%Y-%m-%d %H:%M:%S"
-                    ))) * 1000
+        return (
+            int(
+                isoToTimestamp(
+                    convertTimestampToTimeZone(
+                        millis / 1000, timezone, "%Y-%m-%d %H:%M:%S"
+                    )
+                )
+            )
+            * 1000
+        )
 
     def executeBatch(self, notification, signal, targets):
         log.debug("Executing %s action for targets: %s", self.name, targets)
@@ -432,88 +527,116 @@ class EmailAction(IActionBase, TargetableAction):
         for target_timezone, targets in tz_targets.iteritems():
             # Convert timestamp to user timezone
             signal.event.last_seen_time = self._adjustToTimezone(
-                original_lst, target_timezone)
+                original_lst, target_timezone
+            )
             signal.event.first_seen_time = self._adjustToTimezone(
-                original_fst, target_timezone)
-            signal.event.status_change_time =  self._adjustToTimezone(
-                original_sct, target_timezone)
+                original_fst, target_timezone
+            )
+            signal.event.status_change_time = self._adjustToTimezone(
+                original_sct, target_timezone
+            )
 
             data = self._signalToContextDict(signal, notification)
 
             # Check for email recipients in the event
-            details = data['evt'].details
-            mail_targets = details.get('recipients', '')
-            mail_targets = [x.strip() for x in mail_targets.split(',') if x.strip()]
+            details = data["evt"].details
+            mail_targets = details.get("recipients", "")
+            mail_targets = [
+                x.strip() for x in mail_targets.split(",") if x.strip()
+            ]
             if len(mail_targets) > 0:
-                log.debug("Adding recipients defined in the event %s", mail_targets)
+                log.debug(
+                    "Adding recipients defined in the event %s", mail_targets
+                )
                 targets |= set(mail_targets)
 
-            skipfails = notification.content.get('skipfails', False)
+            skipfails = notification.content.get("skipfails", False)
 
             if signal.clear:
-                log.debug("Generating a notification at enabled 'Send Clear' option when event was closed")
-                subject = processTalSource(notification.content['clear_subject_format'], skipfails, **data)
-                body = processTalSource(notification.content['clear_body_format'], skipfails, **data)
+                log.debug(
+                    "Generating a notification at enabled 'Send Clear' "
+                    "option when event was closed"
+                )
+                subject = processTalSource(
+                    notification.content["clear_subject_format"],
+                    skipfails,
+                    **data,
+                )
+                body = processTalSource(
+                    notification.content["clear_body_format"],
+                    skipfails,
+                    **data,
+                )
             else:
-                subject = processTalSource(notification.content['subject_format'], skipfails, **data)
-                body = processTalSource(notification.content['body_format'], skipfails, **data)
+                subject = processTalSource(
+                    notification.content["subject_format"], skipfails, **data
+                )
+                body = processTalSource(
+                    notification.content["body_format"], skipfails, **data
+                )
 
-            log.debug('Sending this subject: %s', subject)
+            log.debug("Sending this subject: %s", subject)
 
             # Find all time strings in body and add timezone to it
-            body = re.sub(r'(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d{3})',
-                          r'\1 ({})'.format(target_timezone), body)
+            body = re.sub(
+                r"(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d{3})",
+                r"\1 ({})".format(target_timezone),
+                body,
+            )
 
-            plain_body = self._encodeBody(self._stripTags(body)) \
-                if self.stripBodyTags else self._encodeBody(body)
+            plain_body = (
+                self._encodeBody(self._stripTags(body))
+                if self.stripBodyTags
+                else self._encodeBody(body)
+            )
 
             email_message = plain_body
 
-            if notification.content['body_content_type'] == 'html':
-                email_message = MIMEMultipart('related')
-                email_message_alternative = MIMEMultipart('alternative')
+            if notification.content["body_content_type"] == "html":
+                email_message = MIMEMultipart("related")
+                email_message_alternative = MIMEMultipart("alternative")
                 email_message_alternative.attach(plain_body)
                 html_body = self._encodeBody(body)
-                html_body.set_type('text/html')
+                html_body.set_type("text/html")
                 email_message_alternative.attach(html_body)
 
                 email_message.attach(email_message_alternative)
-                log.debug('Sending this body: %s', body)
+                log.debug("Sending this body: %s", body)
             else:
-                log.debug('Sending this body: %s', plain_body)
+                log.debug("Sending this body: %s", plain_body)
 
-            host = notification.content['host']
-            port = notification.content['port']
-            user = notification.content['user']
-            password = notification.content['password']
-            useTls = notification.content['useTls']
-            email_from = notification.content['email_from']
+            host = notification.content["host"]
+            port = notification.content["port"]
+            user = notification.content["user"]
+            password = notification.content["password"]
+            useTls = notification.content["useTls"]
+            email_from = notification.content["email_from"]
 
-            email_message['Subject'] = subject
-            email_message['From'] = email_from
-            email_message['To'] = ','.join(targets)
-            email_message['Date'] = formatdate(None, True)
+            email_message["Subject"] = subject
+            email_message["From"] = email_from
+            email_message["To"] = ",".join(targets)
+            email_message["Date"] = formatdate(None, True)
 
             result, errorMsg = sendEmail(
-                email_message,
-                host, port,
-                useTls,
-                user, password
+                email_message, host, port, useTls, user, password
             )
 
             if result:
-                log.debug("Notification '%s' sent emails to: %s",
-                         notification.id, targets)
+                log.debug(
+                    "Notification '%s' sent emails to: %s",
+                    notification.id,
+                    targets,
+                )
             else:
                 raise ActionExecutionException(
-                    "Notification '%s' FAILED to send emails to %s: %s" %
-                    (notification.id, targets, errorMsg)
+                    "Notification '%s' FAILED to send emails to %s: %s"
+                    % (notification.id, targets, errorMsg)
                 )
 
     def getActionableTargets(self, target):
         """
-        @param target: This is an object that implements the IProvidesEmailAddresses
-            interface.
+        @param target: This is an object that implements the
+            IProvidesEmailAddresses interface.
         @type target: UserSettings or GroupSettings.
         """
         if IProvidesEmailAddresses.providedBy(target):
@@ -521,31 +644,36 @@ class EmailAction(IActionBase, TargetableAction):
 
     def _stripTags(self, data):
         """A quick html => plaintext converter
-           that retains and displays anchor hrefs
+        that retains and displays anchor hrefs
 
-           stolen from the old zenactions.
-           @todo: needs to be updated for the new data structure?
+        stolen from the old zenactions.
+        @todo: needs to be updated for the new data structure?
         """
-        tags = re.compile(r'<(.|\n)+?>', re.I | re.M)
-        aattrs = re.compile(r'<a(.|\n)+?href=["\']([^"\']*)[^>]*?>([^<>]*?)</a>', re.I | re.M)
+        tags = re.compile(r"<(.|\n)+?>", re.I | re.M)
+        aattrs = re.compile(
+            r'<a(.|\n)+?href=["\']([^"\']*)[^>]*?>([^<>]*?)</a>', re.I | re.M
+        )
         anchors = re.finditer(aattrs, data)
-        for x in anchors: data = data.replace(x.group(), "%s: %s" % (x.groups()[2], x.groups()[1]))
-        data = re.sub(tags, '', data)
+        for x in anchors:
+            data = data.replace(
+                x.group(), "%s: %s" % (x.groups()[2], x.groups()[1])
+            )
+        data = re.sub(tags, "", data)
         return data
 
 
 class PageAction(IActionBase, TargetableAction):
     implements(IAction)
 
-    id = 'page'
-    name = 'Page'
+    id = "page"
+    name = "Page"
     actionContentInfo = IPageActionContentInfo
     shouldExecuteInBatch = False
 
     def configure(self, options):
         super(PageAction, self).configure(options)
-        self.pagingWorkersTimeout = options.get('pagingWorkersTimeout', 30)
-        self.processQueue = ProcessQueue(options.get('maxPagingWorkers', 1))
+        self.pagingWorkersTimeout = options.get("pagingWorkersTimeout", 30)
+        self.processQueue = ProcessQueue(options.get("maxPagingWorkers", 1))
         self.processQueue.start()
 
     def setupAction(self, dmd):
@@ -555,41 +683,50 @@ class PageAction(IActionBase, TargetableAction):
         self.zenossHostname = dmd.zenossHostname
 
     def executeOnTarget(self, notification, signal, target):
-        log.debug('Executing Page %s action on %s', self.name, target)
+        log.debug("Executing Page %s action on %s", self.name, target)
         environ = dict(os.environ)
         environ["RECIPIENT"] = target
         self._execute(notification, signal, environ)
 
-    def _execute(self, notification, signal, env={}):
+    def _execute(self, notification, signal, env=None):
+        env = env if env else {}
         self.setupAction(notification.dmd)
-        log.debug('Executing page action: %s', self.name)
+        log.debug("Executing page action: %s", self.name)
         data = self._signalToContextDict(signal, notification)
 
-        skipfails = notification.content.get('skipfails', False)
+        skipfails = notification.content.get("skipfails", False)
 
         if signal.clear:
-            log.debug('This is a clearing signal.')
-            subject = processTalSource(notification.content['clear_subject_format'], skipfails, **data)
+            log.debug("This is a clearing signal.")
+            subject = processTalSource(
+                notification.content["clear_subject_format"], skipfails, **data
+            )
         else:
-            subject = processTalSource(notification.content['subject_format'], skipfails, **data)
+            subject = processTalSource(
+                notification.content["subject_format"], skipfails, **data
+            )
 
         msg = str(subject)
 
         log.debug('Sending page message: "%s"', msg)
         _protocol = SendPageProtocol(msg, notification)
-        log.debug('Queueing up page action process. Page command is %s', self.page_command)
+        log.debug(
+            "Queueing up page action process. Page command is %s",
+            self.page_command,
+        )
         self.processQueue.queueProcess(
-            '/bin/sh', ('/bin/sh', '-c', self.page_command),
+            "/bin/sh",
+            ("/bin/sh", "-c", self.page_command),
             env=env,
             processProtocol=_protocol,
             timeout=self.pagingWorkersTimeout,
-            timeout_callback=_protocol.timedOut
+            timeout_callback=_protocol.timedOut,
         )
 
     def getActionableTargets(self, target):
         """
-        @param target: This is an object that implements the IProvidesPagerAddresses
-            interface.
+        @param target: This is an object that implements the
+            IProvidesPagerAddresses interface.
         @type target: UserSettings or GroupSettings.
         """
         if IProvidesPagerAddresses.providedBy(target):
@@ -600,12 +737,19 @@ class EventCommandProtocol(ProcessProtocol):
     def __init__(self, cmd, notification):
         self.cmd = cmd
         self.notification = notification
-        self.data = ''
-        self.error = ''
+        self.data = ""
+        self.error = ""
 
     def timedOut(self, reason):
-        message = "Notification command %s timed out -- %s: stdout: %s\nstderr: %s" % (
-                  self.notification.titleOrId(), self.data, self.error)
+        message = (
+            "Notification command %s timed out -- %s: stdout: %s\nstderr: %s"
+            % (
+                self.notification.titleOrId(),
+                reason.getErrorMessage(),
+                self.data,
+                self.error,
+            )
+        )
         log.error(message)
         log.error("Command executed: %s", self.cmd)
         self.sendEvent(reason, "Command timed out", message, SEVERITY_ERROR)
@@ -614,14 +758,26 @@ class EventCommandProtocol(ProcessProtocol):
     def processEnded(self, reason):
         code = reason.value.exitCode
         if code == 0:
-            message = "Command %s finished successfully (exit code 0) with the following output: %s %s" % (
-                     self.notification.titleOrId(), self.data, self.error)
+            message = (
+                "Command %s finished successfully (exit code 0) with the "
+                "following output: %s %s"
+                % (self.notification.titleOrId(), self.data, self.error)
+            )
             log.info(message)
             log.debug("Command executed: %s", self.cmd)
             self.sendEvent(reason, "Command failed", message, SEVERITY_CLEAR)
         else:
-            message = "Command %s failed (exit code %s) -- %s: stdout: %s\nstderr: %s" % (
-                      self.notification.titleOrId(), reason.getErrorMessage(), code, self.data, self.error)
+            message = (
+                "Command %s failed (exit code %s) -- "
+                "%s: stdout: %s\nstderr: %s"
+                % (
+                    self.notification.titleOrId(),
+                    code,
+                    reason.getErrorMessage(),
+                    self.data,
+                    self.error,
+                )
+            )
             log.error(message)
             log.error("Command executed: %s", self.cmd)
             self.sendEvent(reason, "Command failed", message, SEVERITY_ERROR)
@@ -633,25 +789,28 @@ class EventCommandProtocol(ProcessProtocol):
         self.error += text
 
     def sendEvent(self, reason, summary, message, severity):
-        eventKey= '_'.join([self.notification.action, self.notification.id])
-        event = Event(device="localhost",
-                      eventClass="/Cmd/Failed",
-                      summary="%s %s" % (self.notification.id, summary),
-                      message=message,
-                      eventKey=eventKey,
-                      notification=self.notification.titleOrId(),
-                      stdout=self.data,
-                      stderr=self.error,
-                      severity=severity,
-                      component="zenactiond")
+        eventKey = "_".join([self.notification.action, self.notification.id])
+        event = Event(
+            device="localhost",
+            eventClass="/Cmd/Failed",
+            summary="%s %s" % (self.notification.id, summary),
+            message=message,
+            eventKey=eventKey,
+            notification=self.notification.titleOrId(),
+            stdout=self.data,
+            stderr=self.error,
+            severity=severity,
+            component="zenactiond",
+        )
         self.notification.dmd.ZenEventManager.sendEvent(event)
+
 
 class SendPageProtocol(ProcessProtocol):
     def __init__(self, msg, notification):
         self.notification = notification
         self.msg = msg
-        self.out = ''
-        self.err = ''
+        self.out = ""
+        self.err = ""
 
     def connectionMade(self):
         log.debug("Writing to subproccess stdin")
@@ -665,52 +824,76 @@ class SendPageProtocol(ProcessProtocol):
         self.err += data
 
     def timedOut(self, reason):
-        message = "Paging command %s timed out -- %s: stdout: %s\nstderr: %s" % (
-                  self.notification.titleOrId(), self.out, self.err)
+        message = (
+            "Paging command %s timed out -- %s: stdout: %s\nstderr: %s"
+            % (
+                self.notification.titleOrId(),
+                reason.getErrorMessage(),
+                self.out,
+                self.err,
+            )
+        )
         log.error(message)
-        self.sendEvent(reason, "Paging command timed out", message, SEVERITY_ERROR)
+        self.sendEvent(
+            reason, "Paging command timed out", message, SEVERITY_ERROR
+        )
         return reason
 
     def processEnded(self, reason):
         code = reason.value.exitCode
         if code == 0:
-            message = "Paging message sent successfully (exit code 0) with the following output: %s %s" % (
-                     self.out, self.err)
+            message = (
+                "Paging message sent successfully (exit code 0) with the "
+                "following output: %s %s" % (self.out, self.err)
+            )
             log.info(message)
             self.sendEvent(reason, "Paging failed", message, SEVERITY_CLEAR)
         else:
-            message = "Failed to send paging message \"%s\" (exit code %s) -- %s: stdout: %s\nstderr: %s" % (
-                      self.msg, reason.getErrorMessage(), code, self.out, self.err)
+            message = (
+                'Failed to send paging message "%s" (exit code %s) -- '
+                "%s: stdout: %s\nstderr: %s"
+                % (
+                    self.msg,
+                    reason.getErrorMessage(),
+                    code,
+                    self.out,
+                    self.err,
+                )
+            )
             log.error(message)
-            self.sendEvent(reason, "Paging command failed", message, SEVERITY_ERROR)
+            self.sendEvent(
+                reason, "Paging command failed", message, SEVERITY_ERROR
+            )
 
     def sendEvent(self, reason, summary, message, severity):
-        eventKey = '_'.join([self.notification.action, self.notification.id])
-        event = Event(device="localhost",
-                      eventClass="/Cmd/Failed",
-                      summary="%s %s" % (self.notification.id, summary),
-                      message=message,
-                      eventKey=eventKey,
-                      notification=self.notification.titleOrId(),
-                      stdout=self.out,
-                      stderr=self.err,
-                      severity=severity,
-                      component="zenactiond")
+        eventKey = "_".join([self.notification.action, self.notification.id])
+        event = Event(
+            device="localhost",
+            eventClass="/Cmd/Failed",
+            summary="%s %s" % (self.notification.id, summary),
+            message=message,
+            eventKey=eventKey,
+            notification=self.notification.titleOrId(),
+            stdout=self.out,
+            stderr=self.err,
+            severity=severity,
+            component="zenactiond",
+        )
         self.notification.dmd.ZenEventManager.sendEvent(event)
 
 
 class CommandAction(IActionBase, TargetableAction):
     implements(IAction)
 
-    id = 'command'
-    name = 'Command'
+    id = "command"
+    name = "Command"
     actionContentInfo = ICommandActionContentInfo
 
     shouldExecuteInBatch = False
 
     def configure(self, options):
         super(CommandAction, self).configure(options)
-        self.processQueue = ProcessQueue(options.get('maxCommands', 10))
+        self.processQueue = ProcessQueue(options.get("maxCommands", 10))
         self.processQueue.start()
 
     def setupAction(self, dmd):
@@ -726,21 +909,22 @@ class CommandAction(IActionBase, TargetableAction):
             self._execute(notification, signal)
 
     def executeOnTarget(self, notification, signal, target):
-        log.debug('Executing command action: %s on %s', self.name, target)
+        log.debug("Executing command action: %s on %s", self.name, target)
         environ = {}
-        environ['user'] = getattr(self.dmd.ZenUsers, target, None)
+        environ["user"] = getattr(self.dmd.ZenUsers, target, None)
         self._execute(notification, signal, environ)
 
-    def _execute(self, notification, signal, extra_env= {}):
+    def _execute(self, notification, signal, extra_env=None):
+        extra_env = extra_env if extra_env else {}
         self.setupAction(notification.dmd)
-        log.debug('Executing command action: %s', self.name)
+        log.debug("Executing command action: %s", self.name)
 
         if signal.clear:
-            command = notification.content['clear_body_format']
+            command = notification.content["clear_body_format"]
         else:
-            command = notification.content['body_format']
+            command = notification.content["body_format"]
 
-        log.debug('Executing this command: %s', command)
+        log.debug("Executing this command: %s", command)
 
         actor = signal.event.occurrence[0].actor
         device = None
@@ -751,18 +935,27 @@ class CommandAction(IActionBase, TargetableAction):
         if actor.element_sub_uuid:
             component = self.guidManager.getObject(actor.element_sub_uuid)
 
-        user_env_format = notification.content.get('user_env_format', '') or ''
+        user_env_format = notification.content.get("user_env_format", "") or ""
         env = os.environ.copy()
-        user_env = dict( envvar.split('=', 1) for envvar in user_env_format.split(';') if '=' in envvar)
+        user_env = dict(
+            envvar.split("=", 1)
+            for envvar in user_env_format.split(";")
+            if "=" in envvar
+        )
         env.update(user_env)
-        environ = {'dev': device, 'component': component, 'dmd': notification.dmd, 'env': env}
+        environ = {
+            "dev": device,
+            "component": component,
+            "dmd": notification.dmd,
+            "env": env,
+        }
         data = self._signalToContextDict(signal, notification)
         environ.update(data)
 
-        if environ.get('evt', None):
-            environ['evt'] = self._escapeEvent(environ['evt'])
-        if environ.get('clearEvt', None):
-            environ['clearEvt'] = self._escapeEvent(environ['clearEvt'])
+        if environ.get("evt", None):
+            environ["evt"] = self._escapeEvent(environ["evt"])
+        if environ.get("clearEvt", None):
+            environ["clearEvt"] = self._escapeEvent(environ["clearEvt"])
         environ.update(extra_env)
 
         # Get the proper command
@@ -771,14 +964,14 @@ class CommandAction(IActionBase, TargetableAction):
         log.debug('Executing this compiled command: "%s"', command)
         _protocol = EventCommandProtocol(command, notification)
 
-        log.debug('Queueing up command action process.')
+        log.debug("Queueing up command action process.")
         self.processQueue.queueProcess(
-            '/bin/sh',
-                ('/bin/sh', '-c', command),
-            env=environ['env'],
+            "/bin/sh",
+            ("/bin/sh", "-c", command),
+            env=environ["env"],
             processProtocol=_protocol,
-            timeout=int(notification.content['action_timeout']),
-            timeout_callback=_protocol.timedOut
+            timeout=int(notification.content["action_timeout"]),
+            timeout_callback=_protocol.timedOut,
         )
 
     def getActionableTargets(self, target):
@@ -805,15 +998,15 @@ class CommandAction(IActionBase, TargetableAction):
         After:  "How do you pronounce \"Zenoss\"?"
         """
         QUOTE = '"'
-        BACKSLASH = '\\'
-        return ''.join((QUOTE, msg.replace(QUOTE, BACKSLASH + QUOTE), QUOTE))
+        BACKSLASH = "\\"
+        return "".join((QUOTE, msg.replace(QUOTE, BACKSLASH + QUOTE), QUOTE))
 
 
 class SNMPTrapAction(IActionBase):
     implements(IAction)
 
-    id = 'trap'
-    name = 'SNMP Trap (v1/v2c)'
+    id = "trap"
+    name = "SNMP Trap (v1/v2c)"
     actionContentInfo = ISnmpTrapActionContentInfo
 
     _sessions = defaultdict(dict)
@@ -826,7 +1019,7 @@ class SNMPTrapAction(IActionBase):
         """
         Send out an SNMP trap according to the definition in ZENOSS-MIB.
         """
-        log.debug('Processing SNMP Trap action.')
+        log.debug("Processing SNMP Trap action.")
         self.setupAction(notification.dmd)
         data = self._signalToContextDict(signal, notification)
 
@@ -836,50 +1029,50 @@ class SNMPTrapAction(IActionBase):
 
         # Only send the "clear" event if it has a uuid. A clear signal will be
         # sent if a user closing an event, or if it's automatically aged.
-        if signal.clear and data['clearEventSummary'].uuid:
-            self._sendTrap(notification, data, data['clearEventSummary'])
+        if signal.clear and data["clearEventSummary"].uuid:
+            self._sendTrap(notification, data, data["clearEventSummary"])
 
-        self._sendTrap(notification, data, data['eventSummary'])
+        self._sendTrap(notification, data, data["eventSummary"])
 
     def _sendTrap(self, notification, data, event):
         actor = getattr(event, "actor", None)
         details = event.details
-        baseOID = '1.3.6.1.4.1.14296.1.100'
+        baseOID = "1.3.6.1.4.1.14296.1.100"
 
         fields = {
-           'uuid' :                         ( 1, event),
-           'fingerprint' :                  ( 2, event),
-           'element_identifier' :           ( 3, actor),
-           'element_sub_identifier' :       ( 4, actor),
-           'event_class' :                  ( 5, event),
-           'event_key' :                    ( 6, event),
-           'summary' :                      ( 7, event),
-           'message' :                      ( 8, event),
-           'severity' :                     ( 9, event),
-           'status' :                       (10, event),
-           'event_class_key' :              (11, event),
-           'event_group' :                  (12, event),
-           'state_change_time' :            (13, event),
-           'first_seen_time' :              (14, event),
-           'last_seen_time' :               (15, event),
-           'count' :                        (16, event),
-           'zenoss.device.production_state':(17, details),
-           'agent':                         (20, event),
-           'zenoss.device.device_class':    (21, details),
-           'zenoss.device.location' :       (22, details),
-           'zenoss.device.systems' :        (23, details),
-           'zenoss.device.groups' :         (24, details),
-           'zenoss.device.ip_address':      (25, details),
-           'syslog_facility' :              (26, event),
-           'syslog_priority' :              (27, event),
-           'nt_event_code' :                (28, event),
-           'current_user_name' :            (29, event),
-           'cleared_by_event_uuid' :        (31, event),
-           'zenoss.device.priority' :       (32, details),
-           'event_class_mapping_uuid':      (33, event),
-           'element_title':                 (34, actor),
-           'element_sub_title':             (35, actor)
-           }
+            "uuid": (1, event),
+            "fingerprint": (2, event),
+            "element_identifier": (3, actor),
+            "element_sub_identifier": (4, actor),
+            "event_class": (5, event),
+            "event_key": (6, event),
+            "summary": (7, event),
+            "message": (8, event),
+            "severity": (9, event),
+            "status": (10, event),
+            "event_class_key": (11, event),
+            "event_group": (12, event),
+            "state_change_time": (13, event),
+            "first_seen_time": (14, event),
+            "last_seen_time": (15, event),
+            "count": (16, event),
+            "zenoss.device.production_state": (17, details),
+            "agent": (20, event),
+            "zenoss.device.device_class": (21, details),
+            "zenoss.device.location": (22, details),
+            "zenoss.device.systems": (23, details),
+            "zenoss.device.groups": (24, details),
+            "zenoss.device.ip_address": (25, details),
+            "syslog_facility": (26, event),
+            "syslog_priority": (27, event),
+            "nt_event_code": (28, event),
+            "current_user_name": (29, event),
+            "cleared_by_event_uuid": (31, event),
+            "zenoss.device.priority": (32, details),
+            "event_class_mapping_uuid": (33, event),
+            "element_title": (34, actor),
+            "element_sub_title": (35, actor),
+        }
 
         eventDict = self.createEventDict(fields, event)
         self.processEventDict(eventDict, data, notification.dmd)
@@ -889,7 +1082,7 @@ class SNMPTrapAction(IActionBase):
 
         for v in varbinds:
             log.debug(v)
-        session.sendTrap(baseOID + '.0.0.1', varbinds=varbinds)
+        session.sendTrap(baseOID + ".0.0.1", varbinds=varbinds)
 
     def createEventDict(self, fields, event):
         """
@@ -899,9 +1092,9 @@ class SNMPTrapAction(IActionBase):
         for field, oidspec in fields.items():
             i, source = oidspec
             if source is event.details:
-                val = source.get(field, '')
+                val = source.get(field, "")
             else:
-                val = getattr(source, field, '')
+                val = getattr(source, field, "")
             eventDict[field] = val
         return eventDict
 
@@ -919,30 +1112,33 @@ class SNMPTrapAction(IActionBase):
         varbinds = []
         for field, oidspec in sorted(fields.items(), key=lambda x: x[1][0]):
             i, source = oidspec
-            val = eventDict.get(field, '')
+            val = eventDict.get(field, "")
             if isinstance(val, (list, tuple, set)):
-                val = '|'.join(val)
+                val = "|".join(val)
 
             # Create the binding
             oid = "%s.%d" % (baseOID, i)
-            oidType = 's' if i not in uintValues else 'u'
-            # No matter what the OID data type, send in strings as that's what is expected
+            oidType = "s" if i not in uintValues else "u"
+            # No matter what the OID data type, send in strings as that's
+            # what is expected.
             val = str(val)
 
-            varbinds.append( (oid, oidType, val) )
+            varbinds.append((oid, oidType, val))
         return varbinds
 
     def _getSession(self, content):
-        traphost = content['action_destination']
-        port = content.get('port', 162)
-        destination = '%s:%s' % (traphost, port)
+        traphost = content["action_destination"]
+        port = content.get("port", 162)
+        destination = "%s:%s" % (traphost, port)
 
         if not traphost or port <= 0:
-            log.error("%s: SNMP trap host information %s is incorrect ", destination)
+            log.error(
+                "%s: SNMP trap host information %s is incorrect ", destination
+            )
             return None
 
-        community = content.get('community', 'public')
-        version = content.get('version', 'v2c')
+        community = content.get("community", "public")
+        version = content.get("version", "v2c")
 
         session = self._sessions[destination].get(version, None)
         if session is None:
@@ -952,14 +1148,14 @@ class SNMPTrapAction(IActionBase):
             try:
                 getaddrinfo(traphost, port)
             except Exception:
-                raise ActionExecutionException("The destination %s is not resolvable." % destination)
+                raise ActionExecutionException(
+                    "The destination %s is not resolvable." % destination
+                )
 
-            session = netsnmp.Session((
-                '-%s' % version,
-                '-c', community,
-                destination)
+            session = netsnmp.Session(
+                ("-%s" % version, "-c", community, destination)
             )
-            agent_addr = os.getenv('CONTROLPLANE_HOST_IPS', '').split(' ')[0]
+            agent_addr = os.getenv("CONTROLPLANE_HOST_IPS", "").split(" ")[0]
             if agent_addr:
                 session.agent_addr = agent_addr
             session.open()
@@ -981,23 +1177,29 @@ class SNMPv3Action(SNMPTrapAction):
         ###
         # Get configs
 
-        traphost = content['action_destination']
-        port = content.get('port', 162)
-        destination = '{}:{}'.format(traphost, port)
+        traphost = content["action_destination"]
+        port = content.get("port", 162)
+        destination = "{}:{}".format(traphost, port)
         if not traphost or port <= 0:
-            log.error("%s: SNMP trap host information %s is incorrect ", destination)
+            log.error(
+                "%s: SNMP trap host information %s is incorrect ", destination
+            )
             return None
 
-        contextName = content['contextName']
-        securityEngineId = content['securityEngineId']
-        contextEngineId = content['contextEngineId']
-        securityName = content['securityName']
-        securityPassphrase = content['securityPassphrase']
-        privacyPassphrase = content['privacyPassphrase']
-        authProto = content['authProto'] if content['authProto'] != "None" else None
-        privProto = content['privProto'] if content['privProto'] != "None" else None
+        contextName = content["contextName"]
+        securityEngineId = content["securityEngineId"]
+        contextEngineId = content["contextEngineId"]
+        securityName = content["securityName"]
+        securityPassphrase = content["securityPassphrase"]
+        privacyPassphrase = content["privacyPassphrase"]
+        authProto = (
+            content["authProto"] if content["authProto"] != "None" else None
+        )
+        privProto = (
+            content["privProto"] if content["privProto"] != "None" else None
+        )
 
-        version = 'v3'
+        version = "v3"
 
         usingAuth = False
         usingPriv = False
@@ -1005,39 +1207,40 @@ class SNMPv3Action(SNMPTrapAction):
         ###
         # Build Session
 
-        args = ('-%s' % version, )
+        args = ("-%s" % version,)
         if contextName:
-            args += ( '-n', contextName)
+            args += ("-n", contextName)
         if securityEngineId:
-            args += ('-e', securityEngineId)
+            args += ("-e", securityEngineId)
         if contextEngineId:
-            args += ('-E', contextEngineId)
-        args += ( '-u', securityName)
+            args += ("-E", contextEngineId)
+        args += ("-u", securityName)
         if authProto:
             usingAuth = True
             args += (
-                '-a', authProto,
-                '-A', securityPassphrase,
+                "-a",
+                authProto,
+                "-A",
+                securityPassphrase,
             )
         if privProto:
             usingPriv = True
             args += (
-                '-x', privProto,
-                '-X', privacyPassphrase,
+                "-x",
+                privProto,
+                "-X",
+                privacyPassphrase,
             )
-        securityLevel = 'noAuthNoPriv'
+        securityLevel = "noAuthNoPriv"
         if usingAuth:
             if usingPriv:
-                securityLevel = 'authPriv'
+                securityLevel = "authPriv"
             else:
-                securityLevel = 'authNoPriv'
-        args += (
-            '-l', securityLevel,
-            destination
-        )
+                securityLevel = "authNoPriv"
+        args += ("-l", securityLevel, destination)
 
         session = netsnmp.Session(args)
-        agent_addr = os.getenv('CONTROLPLANE_HOST_IPS', '').split(' ')[0]
+        agent_addr = os.getenv("CONTROLPLANE_HOST_IPS", "").split(" ")[0]
         if agent_addr:
             session.agent_addr = agent_addr
         session.open()
@@ -1048,23 +1251,24 @@ class SNMPv3Action(SNMPTrapAction):
 class SyslogAction(IActionBase):
     implements(IAction)
 
-    id = 'syslog'
-    name = 'Syslog'
+    id = "syslog"
+    name = "Syslog"
     actionContentInfo = ISyslogActionContentInfo
 
     _sock = None
 
     severityToSyslogPriority = {
-       SEVERITY_CLEAR:    5, # NOTICE
-       SEVERITY_DEBUG:    7, # DEBUG
-       SEVERITY_INFO:     2, # INFO
-       SEVERITY_WARNING:  4, # WARNING
-       SEVERITY_ERROR:    3, # ERROR
-       SEVERITY_CRITICAL: 2, # CRITICAL
+        SEVERITY_CLEAR: 5,  # NOTICE
+        SEVERITY_DEBUG: 7,  # DEBUG
+        SEVERITY_INFO: 2,  # INFO
+        SEVERITY_WARNING: 4,  # WARNING
+        SEVERITY_ERROR: 3,  # ERROR
+        SEVERITY_CRITICAL: 2,  # CRITICAL
     }
-     # Note: not using syslog priorities:
-     #      EMERGENCY 0
-     #      ALERT     1
+
+    # Note: not using syslog priorities:
+    #      EMERGENCY 0
+    #      ALERT     1
     def setupAction(self, dmd):
         self.guidManager = GUIDManager(dmd)
         self.zenossHostname = dmd.zenossHostname
@@ -1073,19 +1277,20 @@ class SyslogAction(IActionBase):
         """
         Send out a syslog message
         """
-        log.debug('Processing syslog action.')
+        log.debug("Processing syslog action.")
         self.setupAction(notification.dmd)
 
         data = self._signalToContextDict(signal, notification)
-        event = data['eventSummary']
+        event = data["eventSummary"]
 
         # Construct the syslog packet
         facility = self.getFacility(notification.content, event)
         priority = self.getPriority(notification.content, event)
         device = self.getDeviceName(event)
 
-        packet = self._makeSyslogPacket(facility, priority, event.last_seen_time,
-                                        device, event.summary)
+        packet = self._makeSyslogPacket(
+            facility, priority, event.last_seen_time, device, event.summary
+        )
 
         # Send the syslog packet
         self._openConnection(notification.id, notification.content)
@@ -1094,17 +1299,25 @@ class SyslogAction(IActionBase):
         except socket.error as ex:
             self._sock.close()
             self._sock = None
-            msg = "Notification '%s' FAILED to send syslog messages to %s: %s" % (
-                notification.id, (self.ipaddr, self.port, self.protocol), ex)
+            msg = (
+                "Notification '%s' FAILED to send syslog messages to %s: %s"
+                % (
+                    notification.id,
+                    (self.ipaddr, self.port, self.protocol),
+                    ex,
+                )
+            )
             log.error(msg)
             raise ActionExecutionException(msg)
 
     def getFacility(self, content, event):
-        return content['facility']
+        return content["facility"]
 
     def getPriority(self, content, event):
         SyslogErrorLevel = 3
-        priority = self.severityToSyslogPriority.get(event.severity, SyslogErrorLevel)
+        priority = self.severityToSyslogPriority.get(
+            event.severity, SyslogErrorLevel
+        )
         return priority
 
     def getDeviceName(self, event):
@@ -1114,45 +1327,52 @@ class SyslogAction(IActionBase):
         #    However, lots of clients do it anyway.  Fall back to that field.
         hostname = event.actor.element_title
         if not isip(hostname):
-            hostname = hostname.split('.')[0].strip()
+            hostname = hostname.split(".")[0].strip()
         return hostname
 
     def _openConnection(self, notificationId, content):
-
         if self._sock is not None:
             return
 
-        host = content['host']
-        self.port = int(content['port'])
+        host = content["host"]
+        self.port = int(content["port"])
 
         self.ipaddr = getHostByName(host)
 
         # IPv[46]
-        AF = socket.AF_INET6 if ':' in self.ipaddr else socket.AF_INET
+        AF = socket.AF_INET6 if ":" in self.ipaddr else socket.AF_INET
 
         # Set the socket type
-        self.protocol = content['protocol'].lower()
-        ST = socket.SOCK_STREAM if self.protocol == 'tcp' else socket.SOCK_DGRAM
+        self.protocol = content["protocol"].lower()
+        ST = (
+            socket.SOCK_STREAM if self.protocol == "tcp" else socket.SOCK_DGRAM
+        )
 
         # Try to connect
         self._sock = socket.socket(AF, ST)
         try:
-            self._sock.connect( (self.ipaddr, self.port) )
-        except socket.error as ex: # Connection failed
+            self._sock.connect((self.ipaddr, self.port))
+        except socket.error as ex:  # Connection failed
             self._sock.close()
             self._sock = None
-            msg = "Notification '%s' FAILED to send syslog messages to %s: %s" % (
-                notificationId, (self.ipaddr, self.port, self.protocol), ex)
+            msg = (
+                "Notification '%s' FAILED to send syslog messages to %s: %s"
+                % (notificationId, (self.ipaddr, self.port, self.protocol), ex)
+            )
             log.error(msg)
             raise ActionExecutionException(msg)
 
     def _makeSyslogPacket(self, facility, priority, dt, host, msg):
         # Force msg to have only ASCII 32-126 (inclusive)
         # See RFC3164 for details
-        msg = ''.join([c if ord(c) >= 32 and ord(c) <= 126 else '_' for c in msg])
-        msg = msg.strip('_') # Strip off meaningless characters from the ends only
+        msg = "".join(
+            [c if ord(c) >= 32 and ord(c) <= 126 else "_" for c in msg]
+        )
+        msg = msg.strip(
+            "_"
+        )  # Strip off meaningless characters from the ends only
 
         PRI = int(facility) * 8 + int(priority)
         # divide 'dt' to represent is as seconds
-        timestamp = strftime("%b %e %T", localtime(dt/1000))
+        timestamp = strftime("%b %e %T", localtime(dt / 1000))
         return ("<%d>%s %s %s" % (PRI, timestamp, host, msg))[:1023] + "\n"

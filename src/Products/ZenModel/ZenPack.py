@@ -11,78 +11,107 @@
 ZenPacks base definitions
 """
 
-import logging
+import ConfigParser
 import datetime
 import glob
 import json
-import string
-import subprocess
+import logging
 import os
 import os.path
-import sys
 import shutil
+import string
+import subprocess
+import sys
 import zipfile
 
 from collections import defaultdict
 from StringIO import StringIO
 
 import pkg_resources
+import Products
+import servicemigration
+import six
 
-from Acquisition import aq_base
+from AccessControl import ClassSecurityInfo
 from AccessControl.class_init import InitializeClass
-from Products.ZenModel.ZenModelRM import ZenModelRM
-from Products.ZenRelations.RelSchema import *
+from Acquisition import aq_base, aq_parent
+from zope.component import getUtility
+
+from Products.ZenMessaging.audit import audit
+from Products.ZenRelations.RelSchema import ToMany, ToManyCont, ToOne
+from Products.ZenUtils.controlplane.application import getConnectionSettings
+from Products.ZenUtils.controlplane import (
+    ControlCenterError,
+    ControlPlaneClient,
+    ServiceTree,
+)
 from Products.ZenUtils.Utils import importClass, zenPath, varPath
 from Products.ZenUtils.Version import getVersionTupleFromString
 from Products.ZenUtils.Version import Version as VersionBase
-from Products.ZenUtils.controlplane import ControlPlaneClient, ServiceTree, ControlCenterError
-from Products.ZenUtils.controlplane.application import getConnectionSettings
-from Products.ZenModel import ExampleLicenses
-from Products.ZenModel.DeviceClass import DeviceClass
-from Products.ZenModel.RRDTemplate import RRDTemplate
-from Products.ZenModel.ZenPackLoader import *
-from Products.ZenWidgets import messaging
-from AccessControl import ClassSecurityInfo
-from ZenossSecurity import ZEN_MANAGE_DMD
-from Acquisition import aq_parent
-from Products.ZenModel.ZVersion import VERSION as ZENOSS_VERSION
-from Products.ZenMessaging.audit import audit
-from zope.component import getUtility
 from Products.ZenUtils.virtual_root import IVirtualRoot
+from Products.ZenWidgets import messaging
 
-import servicemigration
+from . import ExampleLicenses
+from .DeviceClass import DeviceClass
+from .RRDTemplate import RRDTemplate
+from .ZenModelRM import ZenModelRM
+from .ZenossSecurity import ZEN_MANAGE_DMD
+from .ZenPackLoader import (
+    CONFIG_FILE,
+    CONFIG_SECTION_ABOUT,
+    ZPLAbout,
+    ZPLBin,
+    ZPLDaemons,
+    ZPLDataSources,
+    ZPLLibExec,
+    ZPLLibraries,
+    ZPLObject,
+    ZPLReport,
+    ZPLSkins,
+    ZPTriggerAction,
+    ZPZep,
+)
+from .ZVersion import VERSION as ZENOSS_VERSION
+
 servicemigration.require("1.0.0")
-log = logging.getLogger('zen.ZenPack')
 
-log = logging.getLogger('zen.ZenPack')
+log = logging.getLogger("zen.model.zenpack")
+
 
 class ZenPackException(Exception):
     pass
 
+
 class ZenPackNotFoundException(ZenPackException):
     pass
+
 
 class ZenPackDuplicateNameException(ZenPackException):
     pass
 
+
 class ZenPackNeedMigrateException(ZenPackException):
     pass
+
 
 class ZenPackDependentsException(ZenPackException):
     pass
 
+
 class ZenPackDevelopmentModeExeption(ZenPackException):
     pass
 
+
 class Version(VersionBase):
     def __init__(self, *args, **kw):
-        VersionBase.__init__(self, 'Zenoss', *args, **kw)
+        VersionBase.__init__(self, "Zenoss", *args, **kw)
 
 
 def needDir(path, perms=0o750):
     if not os.path.isdir(path):
         os.mkdir(path, perms)
     return path
+
 
 def eliminateDuplicates(objs):
     """
@@ -95,12 +124,12 @@ def eliminateDuplicates(objs):
     @rtype: list of objects
     """
 
-    objs.sort(key = lambda x: x.getPrimaryPath())
+    objs.sort(key=lambda x: x.getPrimaryPath())
     result = []
     for obj in objs:
         for alreadyInList in result:
             path = alreadyInList.getPrimaryPath()
-            if obj.getPrimaryPath()[:len(path)] == path:
+            if obj.getPrimaryPath()[: len(path)] == path:
                 break
         else:
             result.append(obj)
@@ -111,6 +140,7 @@ class ZenPackMigration:
     """
     Base class for defining migration methods
     """
+
     version = Version(0, 0, 0)
 
     def migrate(self, pack):
@@ -132,21 +162,20 @@ class ZenPackMigration:
         pass
 
 
-
-
 class ZenPackDataSourceMigrateBase(ZenPackMigration):
     """
     Base class for ZenPack migrate steps that need to switch classes of
     datasources and reindex them.  This is frequently done in migrate
     scripts for 2.2 when ZenPacks are migrated to python eggs.
     """
+
     # dsClass is the actual class of the datasource provided by this ZenPack
     dsClass = None
     # These are the names of the module and the class of the datasource as
     # provided by previous versios of this ZenPack.  If these are provided
     # then any instances of them will be converted to instances of dsClass.
-    oldDsModuleName = ''
-    oldDsClassName = ''
+    oldDsModuleName = ""
+    oldDsClassName = ""
     # If reIndex is True then any instances of dsClass are reindexed.
     reIndex = False
 
@@ -159,15 +188,17 @@ class ZenPackDataSourceMigrateBase(ZenPackMigration):
         """
         if self.oldDsModuleName and self.oldDsClassName and self.dsClass:
             try:
-                exec('import %s' % self.oldDsModuleName)
-                oldClass = eval('%s.%s' % (self.oldDsModuleName,
-                                            self.oldDsClassName))
+                exec("import %s" % self.oldDsModuleName)  # noqa: S102
+                oldClass = eval(  # noqa: S307
+                    "%s.%s" % (self.oldDsModuleName, self.oldDsClassName)
+                )
             except ImportError:
                 # The old-style code no longer exists in Products,
                 # so we assume the migration has already happened.
                 oldClass = None
 
         from Products.ZenModel.RRDTemplate import YieldAllRRDTemplates
+
         for template in YieldAllRRDTemplates(pack.dmd, None):
             for ds in template.datasources():
                 if oldClass and self.dsClass and isinstance(ds, oldClass):
@@ -183,11 +214,13 @@ class DirectoryConfigContents(object):
     the contents of /foo/bar/baz/qux is 'barge', then
         DirectoryConfigContents('/foo/bar')['/baz/qux'] == 'barge'
     """
+
     def __init__(self, path):
         self._path = path
+
     def __getitem__(self, key):
         try:
-            return open(os.path.join(self._path, key.lstrip('/'))).read()
+            return open(os.path.join(self._path, key.lstrip("/"))).read()
         except Exception:
             raise KeyError(key)
 
@@ -201,13 +234,13 @@ class ZenPack(ZenModelRM):
     objectPaths = None
 
     # Metadata
-    version = '0.1'
-    author = ''
-    organization = ''
-    url = ''
-    license = ''
-    compatZenossVers = ''
-    prevZenPackName = ''
+    version = "0.1"
+    author = ""
+    organization = ""
+    url = ""
+    license = ""
+    compatZenossVers = ""
+    prevZenPackName = ""
     prevZenPackVersion = None
 
     # Control Center service ID for container executing this installation
@@ -222,47 +255,89 @@ class ZenPack(ZenModelRM):
 
     installableFromUI = True
 
-    requires = () # deprecated
+    requires = ()  # deprecated
 
-    loaders = (ZPLObject(), ZPLReport(), ZPLDaemons(), ZPLBin(), ZPLLibExec(),
-                ZPLSkins(), ZPLDataSources(), ZPLLibraries(), ZPLAbout(),
-                ZPTriggerAction(), ZPZep())
-
-    _properties = ZenModelRM._properties + (
-        {'id':'objectPaths','type':'lines','mode':'w'},
-        {'id':'version', 'type':'string', 'mode':'w', 'description':'ZenPack version'},
-        {'id':'author', 'type':'string', 'mode':'w', 'description':'ZenPack author'},
-        {'id':'organization', 'type':'string', 'mode':'w',
-              'description':'Sponsoring organization for the ZenPack'},
-        {'id':'url', 'type':'string', 'mode':'w', 'description':'Homepage for the ZenPack'},
-        {'id':'license', 'type':'string', 'mode':'w',
-              'description':'Name of the license under which this ZenPack is available'},
-        {'id':'compatZenossVers', 'type':'string', 'mode':'w',
-              'description':'Which Zenoss versions can load this ZenPack'},
+    loaders = (
+        ZPLObject(),
+        ZPLReport(),
+        ZPLDaemons(),
+        ZPLBin(),
+        ZPLLibExec(),
+        ZPLSkins(),
+        ZPLDataSources(),
+        ZPLLibraries(),
+        ZPLAbout(),
+        ZPTriggerAction(),
+        ZPZep(),
     )
 
-    _relations =  (
+    _properties = ZenModelRM._properties + (
+        {"id": "objectPaths", "type": "lines", "mode": "w"},
+        {
+            "id": "version",
+            "type": "string",
+            "mode": "w",
+            "description": "ZenPack version",
+        },
+        {
+            "id": "author",
+            "type": "string",
+            "mode": "w",
+            "description": "ZenPack author",
+        },
+        {
+            "id": "organization",
+            "type": "string",
+            "mode": "w",
+            "description": "Sponsoring organization for the ZenPack",
+        },
+        {
+            "id": "url",
+            "type": "string",
+            "mode": "w",
+            "description": "Homepage for the ZenPack",
+        },
+        {
+            "id": "license",
+            "type": "string",
+            "mode": "w",
+            "description": (
+                "Name of the license under which this ZenPack is available"
+            ),
+        },
+        {
+            "id": "compatZenossVers",
+            "type": "string",
+            "mode": "w",
+            "description": "Which Zenoss versions can load this ZenPack",
+        },
+    )
+
+    _relations = (
         # root is deprecated, use manager now instead
         # root should be removed post zenoss 2.2
-        ('root', ToOne(ToManyCont, 'Products.ZenModel.DataRoot', 'packs')),
-        ('manager',
-            ToOne(ToManyCont, 'Products.ZenModel.ZenPackManager', 'packs')),
+        ("root", ToOne(ToManyCont, "Products.ZenModel.DataRoot", "packs")),
+        (
+            "manager",
+            ToOne(ToManyCont, "Products.ZenModel.ZenPackManager", "packs"),
+        ),
         ("packables", ToMany(ToOne, "Products.ZenModel.ZenPackable", "pack")),
-        )
+    )
 
     factory_type_information = (
-        { 'immediate_view' : 'viewPackDetail',
-          'factory'        : 'manage_addZenPack',
-          'actions'        :
-          (
-           { 'id'            : 'viewPackDetail'
-             , 'name'          : 'Detail'
-             , 'action'        : 'viewPackDetail'
-             , 'permissions'   : ( "Manage DMD", )
-             },
-           )
-          },
-        )
+        {
+            "immediate_view": "viewPackDetail",
+            "factory": "manage_addZenPack",
+            "actions": (
+                {
+                    "id": "viewPackDetail",
+                    "name": "Detail",
+                    "action": "viewPackDetail",
+                    "permissions": ("Manage DMD",),
+                },
+            ),
+        },
+    )
 
     packZProperties = []
     packZProperties_data = {}
@@ -293,40 +368,40 @@ class ZenPack(ZenModelRM):
         pack_zproperties = {}
         for p_id, p_value, p_type in cls.packZProperties:
             pack_zproperties[p_id] = {
-                'type': p_type,
-                'defaultValue': p_value,
-                }
+                "type": p_type,
+                "defaultValue": p_value,
+            }
 
         for p_id, p_data in cls.packZProperties_data.items():
             if p_id not in pack_zproperties:
-                if 'type' not in p_data or 'defaultValue' not in p_data:
+                if "type" not in p_data or "defaultValue" not in p_data:
                     log.error(
                         "%s: type or defaultValue not set for %s property",
                         cls.__module__,
-                        p_id)
-
+                        p_id,
+                    )
                     continue
 
                 pack_zproperties[p_id] = {
-                    'type': p_data['type'],
-                    'defaultValue': p_data['defaultValue'],
-                    }
+                    "type": p_data["type"],
+                    "defaultValue": p_data["defaultValue"],
+                }
 
             for p_data_key, p_data_value in p_data.items():
-                pack_zproperties[p_id].setdefault(
-                    p_data_key, p_data_value)
+                pack_zproperties[p_id].setdefault(p_data_key, p_data_value)
 
         return pack_zproperties
 
     def __init__(self, id, title=None, buildRelations=True):
-        #self.dependencies = {'zenpacksupport':''}
+        # self.dependencies = {'zenpacksupport':''}
         self.dependencies = {}
         ZenModelRM.__init__(self, id, title, buildRelations)
         self._modulename = None
 
     def install(self, app):
         """
-        Stop daemons, load any loaders, create zProperties, migrate and start daemons
+        Stop daemons, load any loaders, create zProperties, migrate,
+        and start daemons.
 
         @param app: ZenPack
         @type app: ZenPack object
@@ -354,26 +429,28 @@ class ZenPack(ZenModelRM):
         try:
             if src.lower().endswith(".egg"):
                 filename = os.path.join(backupDir, os.path.basename(src))
-                zip = zipfile.ZipFile(filename+".tmp", "w")
+                zip = zipfile.ZipFile(filename + ".tmp", "w")
                 prefix = ""
             else:
-                filename = os.path.join(backupDir, "%s-%s.zip" % (self.id, self.version))
-                zip = zipfile.ZipFile(filename+".tmp", "w")
+                filename = os.path.join(
+                    backupDir, "%s-%s.zip" % (self.id, self.version)
+                )
+                zip = zipfile.ZipFile(filename + ".tmp", "w")
                 prefix = self.id
             ignore = len(src) + 1
-            for root, dirs, files in os.walk(src):
+            for root, _, files in os.walk(src):
                 for file in files:
                     f = os.path.join(root, file)
                     archivename = os.path.join(prefix, f[ignore:])
                     zip.write(f, archivename)
             zip.close()
             zip = None
-            os.rename(filename+".tmp", filename)
+            os.rename(filename + ".tmp", filename)
         finally:
             if zip:
                 zip.close()
-            if filename and os.path.exists(filename+".tmp"):
-                os.remove(filename+".tmp")
+            if filename and os.path.exists(filename + ".tmp"):
+                os.remove(filename + ".tmp")
 
     def upgrade(self, app):
         """
@@ -404,15 +481,19 @@ class ZenPack(ZenModelRM):
         cpClient = ControlPlaneClient(**getConnectionSettings())
         services = cpClient.queryServices("*")
         serviceTree = ServiceTree(services)
-        serviceRoots = serviceTree.matchServicePath(ZenPack.currentServiceId, '/')
+        serviceRoots = serviceTree.matchServicePath(
+            ZenPack.currentServiceId, "/"
+        )
         for root in serviceRoots:
             services = serviceTree.findMatchingServices(root, tag)
             # Ensure that child services are processed before parents
-            services.sort(key=lambda x:len(serviceTree.getPath(x)), reverse=True)
+            services.sort(
+                key=lambda x: len(serviceTree.getPath(x)), reverse=True
+            )
             for service in services:
-                if action == 'stop':
+                if action == "stop":
                     cpClient.stopService(service.id)
-                elif action == 'delete':
+                elif action == "delete":
                     cpClient.deleteService(service.id)
 
     def remove(self, app, leaveObjects=False):
@@ -429,13 +510,13 @@ class ZenPack(ZenModelRM):
         """
         serviceTag = self.getServiceTag()
         if not leaveObjects:
-            self.doServiceAction(serviceTag, 'stop')
+            self.doServiceAction(serviceTag, "stop")
         for loader in self.loaders:
             loader.unload(self, app, leaveObjects)
         if not leaveObjects:
             self.removeZProperties(app)
             self.removeCatalogedObjects(app)
-            self.doServiceAction(serviceTag, 'delete')
+            self.doServiceAction(serviceTag, "delete")
 
     def backup(self, backupDir, logger):
         """
@@ -461,7 +542,6 @@ class ZenPack(ZenModelRM):
         """
         pass
 
-
     def migrate(self, previousVersion=None):
         """
         Migrate to a new version
@@ -472,10 +552,10 @@ class ZenPack(ZenModelRM):
         instances = []
         # find all the migrate modules
         root = self.path("migrate")
-        for p, ds, fs in os.walk(root):
+        for p, _, fs in os.walk(root):
             for f in fs:
-                if f.endswith('.py') and not f.startswith("__"):
-                    path = os.path.join(p[len(root) + 1:], f)
+                if f.endswith(".py") and not f.startswith("__"):
+                    path = os.path.join(p[len(root) + 1 :], f)
                     log.debug("Loading %s", path)
                     sys.path.insert(0, p)
                     try:
@@ -484,10 +564,12 @@ class ZenPack(ZenModelRM):
                             instances.append(c())
                         finally:
                             sys.path.remove(p)
-                    except ImportError as ex:
-                        log.exception("Problem loading migration step %s", path)
+                    except ImportError:
+                        log.exception(
+                            "Problem loading migration step %s", path
+                        )
         # sort them by version number
-        instances.sort(key = lambda x: x.version)
+        instances.sort(key=lambda x: x.version)
         # install those that are newer than previous or our pack version
         migrateCutoff = getVersionTupleFromString(self.version)
         if previousVersion:
@@ -499,13 +581,12 @@ class ZenPack(ZenModelRM):
                 if instance.version.tuple() >= migrateCutoff:
                     recover.append(instance)
                     instance.migrate(self)
-        except Exception as ex:
+        except Exception:
             # give the pack a chance to recover from problems
             recover.reverse()
             for r in recover:
                 r.recover(self)
             raise
-
 
     def list(self, app):
         """
@@ -518,8 +599,7 @@ class ZenPack(ZenModelRM):
         """
         result = []
         for loader in self.loaders:
-            result.append((loader.name,
-                           [item for item in loader.list(self, app)]))
+            result.append((loader.name, list(loader.list(self, app))))
         return result
 
     def register_portlets(self):
@@ -546,9 +626,9 @@ class ZenPack(ZenModelRM):
             if not app.zport.dmd.Devices.hasProperty(name):
                 app.zport.dmd.Devices._setProperty(
                     name,
-                    data.get('defaultValue', ''),
-                    data.get('type', 'string'))
-
+                    data.get("defaultValue", ""),
+                    data.get("type", "string"),
+                )
 
     def removeZProperties(self, app):
         """
@@ -560,7 +640,6 @@ class ZenPack(ZenModelRM):
         for name in self.getZProperties():
             if app.zport.dmd.Devices.hasProperty(name):
                 app.zport.dmd.Devices._delProperty(name)
-
 
     def removeCatalogedObjects(self, app):
         """
@@ -576,100 +655,47 @@ class ZenPack(ZenModelRM):
             if parent:
                 parent._delObject(o.id)
 
-
     def getCatalogedObjects(self):
         """
         Return a list of objects from the ZenPackPersistence catalog
         for this zenpack.
         """
         from ZenPackPersistence import GetCatalogedObjects
+
         return GetCatalogedObjects(self.dmd, self.id) or []
 
+    security.declareProtected(ZEN_MANAGE_DMD, "zmanage_editProperties")
 
-    security.declareProtected(ZEN_MANAGE_DMD, 'zmanage_editProperties')
     def zmanage_editProperties(self, REQUEST, redirect=False):
         """
         Edit a ZenPack object
         """
-
         if self.isEggPack():
-            # Handle the dependencies fields and recreate self.dependencies
-            newDeps = {}
-            depNames = REQUEST.get('dependencies', [])
-            if not isinstance(depNames, list):
-                depNames = [depNames]
-            newDeps = {}
-            for depName in depNames:
-                fieldName = 'version_%s' % depName
-                vers = REQUEST.get(fieldName, '').strip()
-                if vers and vers[0] in string.digits:
-                    vers = '==' + vers
-                try:
-                    req = pkg_resources.Requirement.parse(depName + vers)
-                except ValueError:
-                    messaging.IMessageSender(self).sendToBrowser(
-                        'Error',
-                        '%s is not a valid version specification.' % vers,
-                        priority=messaging.WARNING
-                    )
-                    return self.callZenScreen(REQUEST)
-                zp = self.dmd.ZenPackManager.packs._getOb(depName, None)
-                if not zp:
-                    messaging.IMessageSender(self).sendToBrowser(
-                        'Error',
-                        '%s is not installed.' % depName,
-                        priority=messaging.WARNING
-                    )
-                    return self.callZenScreen(REQUEST)
-                if not req.__contains__(zp.version):
-                    messaging.IMessageSender(self).sendToBrowser(
-                        'Error',
-                        ('The required version for %s (%s) ' % (depName, vers) +
-                        'does not match the installed version (%s).' %
-                         zp.version),
-                        priority=messaging.WARNING
-                    )
-                    return self.callZenScreen(REQUEST)
-                newDeps[depName] = vers
-                REQUEST.form[fieldName] = vers
-            self.dependencies = newDeps
-            # Check the value of compatZenossVers and the dependencies to
-            # make sure that they match installed versions
-            compatZenossVers = REQUEST.form['compatZenossVers'] or ''
-            if compatZenossVers:
-                if compatZenossVers[0] in string.digits:
-                    compatZenossVers = '==' + compatZenossVers
-                try:
-                    req = pkg_resources.Requirement.parse(
-                                                'zenoss%s' % compatZenossVers)
-                except ValueError:
-                    messaging.IMessageSender(self).sendToBrowser(
-                        'Error',
-                        ('%s is not a valid version specification for Zenoss.'
-                                                        % compatZenossVers),
-                        priority=messaging.WARNING
-                    )
-                if not req.__contains__(ZENOSS_VERSION):
-                    messaging.IMessageSender(self).sendToBrowser(
-                        'Error',
-                        ('%s does not match this version of Zenoss (%s).' %
-                            (compatZenossVers, ZENOSS_VERSION)),
-                        priority=messaging.WARNING
-                    )
-                    return self.callZenScreen(REQUEST)
-                REQUEST.form['compatZenossVers'] = compatZenossVers
+            dependencies, error = self._get_dependencies(REQUEST)
+            if error:
+                return self.callZenScreen(REQUEST)
+            self.dependencies = dependencies
 
-        if 'Select or specify your own' in REQUEST.get('license', ''):
-            REQUEST.form['license'] = ''
+            error = self._handle_compatZenossVers(REQUEST)
+            if error:
+                return self.callZenScreen(REQUEST)
 
-        result =  ZenModelRM.zmanage_editProperties(self, REQUEST, redirect,
-                audit=False)
-        audit('UI.ZenPack.Edit',
-                self.id,
-                data_=REQUEST.form,
-                skipFields_=('redirect',
-                        'zenScreenName',
-                        'zmanage_editProperties'))
+        if "Select or specify your own" in REQUEST.get("license", ""):
+            REQUEST.form["license"] = ""
+
+        result = ZenModelRM.zmanage_editProperties(
+            self, REQUEST, redirect, audit=False
+        )
+        audit(
+            "UI.ZenPack.Edit",
+            self.id,
+            data_=REQUEST.form,
+            skipFields_=(
+                "redirect",
+                "zenScreenName",
+                "zmanage_editProperties",
+            ),
+        )
 
         if self.isEggPack():
             self.writeSetupValues()
@@ -677,6 +703,83 @@ class ZenPack(ZenModelRM):
             self.buildEggInfo()
         return result
 
+    def _get_dependencies(self, REQUEST):
+        # Handle the dependencies fields and recreate self.dependencies
+        depNames = REQUEST.get("dependencies", [])
+        if not isinstance(depNames, list):
+            depNames = [depNames]
+        newDeps = {}
+        for depName in depNames:
+            fieldName = "version_%s" % depName
+            vers = REQUEST.get(fieldName, "").strip()
+            if vers and vers[0] in string.digits:
+                vers = "==" + vers
+            try:
+                req = pkg_resources.Requirement.parse(depName + vers)
+            except ValueError:
+                messaging.IMessageSender(self).sendToBrowser(
+                    "Error",
+                    "%s is not a valid version specification." % vers,
+                    priority=messaging.WARNING,
+                )
+                return None, True
+            zp = self.dmd.ZenPackManager.packs._getOb(depName, None)
+            if not zp:
+                messaging.IMessageSender(self).sendToBrowser(
+                    "Error",
+                    "%s is not installed." % depName,
+                    priority=messaging.WARNING,
+                )
+                return None, True
+            if not req.__contains__(zp.version):
+                messaging.IMessageSender(self).sendToBrowser(
+                    "Error",
+                    (
+                        "The required version for %s (%s) " % (depName, vers)
+                        + "does not match the installed version (%s)."
+                        % zp.version
+                    ),
+                    priority=messaging.WARNING,
+                )
+                return None, True
+            newDeps[depName] = vers
+            REQUEST.form[fieldName] = vers
+        return newDeps, False
+
+    def _handle_compatZenossVers(self, REQUEST):
+        # Check the value of compatZenossVers and the dependencies to
+        # make sure that they match installed versions
+        compatZenossVers = REQUEST.form["compatZenossVers"] or ""
+        if not compatZenossVers:
+            return False
+
+        if compatZenossVers[0] in string.digits:
+            compatZenossVers = "==" + compatZenossVers
+        try:
+            req = pkg_resources.Requirement.parse(
+                "zenoss%s" % compatZenossVers
+            )
+        except ValueError:
+            messaging.IMessageSender(self).sendToBrowser(
+                "Error",
+                (
+                    "%s is not a valid version specification "
+                    "for Zenoss." % compatZenossVers
+                ),
+                priority=messaging.WARNING,
+            )
+            return True
+        if not req.__contains__(ZENOSS_VERSION):
+            messaging.IMessageSender(self).sendToBrowser(
+                "Error",
+                (
+                    "%s does not match this version of Zenoss (%s)."
+                    % (compatZenossVers, ZENOSS_VERSION)
+                ),
+                priority=messaging.WARNING,
+            )
+            return True
+        REQUEST.form["compatZenossVers"] = compatZenossVers
 
     def manage_deletePackable(self, packables=(), REQUEST=None):
         "Delete objects from this ZenPack"
@@ -686,45 +789,47 @@ class ZenPack(ZenModelRM):
                 self.packables.removeRelation(obj)
         if REQUEST:
             messaging.IMessageSender(self).sendToBrowser(
-                'Objects Deleted',
-                'Deleted objects from ZenPack %s.' % self.id
+                "Objects Deleted", "Deleted objects from ZenPack %s." % self.id
             )
             return self.callZenScreen(REQUEST)
-
 
     def manage_uploadPack(self, znetProject, description, REQUEST=None):
         """
         Create a new release of the given project.
         """
         import Products.ZenUtils.ZenPackCmd as ZenPackCmd
+
         userSettings = self.dmd.ZenUsers.getUserSettings()
-        ZenPackCmd.UploadZenPack(self.dmd, self.id, znetProject, description,
-            userSettings.zenossNetUser, userSettings.zenossNetPassword)
+        ZenPackCmd.UploadZenPack(
+            self.dmd,
+            self.id,
+            znetProject,
+            description,
+            userSettings.zenossNetUser,
+            userSettings.zenossNetPassword,
+        )
         if REQUEST:
             messaging.IMessageSender(self).sendToBrowser(
-                'ZenPack Uploaded',
-                'ZenPack uploaded to Zenoss.net.'
+                "ZenPack Uploaded", "ZenPack uploaded to Zenoss.net."
             )
             return self.callZenScreen(REQUEST)
-
 
     def exportToSeparateFile(self, obj, subdir):
         xml = StringIO()
         xml.write("""<?xml version="1.0"?>\n""")
         xml.write("<objects>\n")
-        xml.write('<!-- %r -->\n' % (obj.getPrimaryPath(),))
-        obj.exportXml(xml,['devices','networks','pack'],True)
+        xml.write("<!-- %r -->\n" % (obj.getPrimaryPath(),))
+        obj.exportXml(xml, ["devices", "networks", "pack"], True)
         xml.write("</objects>\n")
 
-        path = needDir(self.path('objects/%s' % subdir))
-        filename = '%s.xml' % '_'.join(obj.getPrimaryPath()[3:])
+        path = needDir(self.path("objects/%s" % subdir))
+        filename = "%s.xml" % "_".join(obj.getPrimaryPath()[3:])
 
-        objects = file(os.path.join(path, filename), 'w')
-        objects.write(xml.getvalue())
-        objects.close()
+        with open(os.path.join(path, filename), "w") as objects:
+            objects.write(xml.getvalue())
 
+    security.declareProtected(ZEN_MANAGE_DMD, "manage_exportPack")
 
-    security.declareProtected(ZEN_MANAGE_DMD, 'manage_exportPack')
     def manage_exportPack(self, download="no", REQUEST=None):
         """
         Export the ZenPack to the /export directory
@@ -738,14 +843,17 @@ class ZenPack(ZenModelRM):
         @todo: add better XML headers
         """
         if not self.isDevelopment():
-            msg = 'Only ZenPacks installed in development mode can be exported.'
+            msg = (
+                "Only ZenPacks installed in development mode can be exported."
+            )
             if REQUEST:
                 messaging.IMessageSender(self).sendToBrowser(
-                        'Error', msg, priority=messaging.WARNING)
+                    "Error", msg, priority=messaging.WARNING
+                )
                 return self.callZenScreen(REQUEST)
             raise ZenPackDevelopmentModeExeption(msg)
 
-        path = needDir(self.path('objects'))
+        path = needDir(self.path("objects"))
 
         xml = StringIO()
         # Write out packable objects
@@ -756,103 +864,119 @@ class ZenPack(ZenModelRM):
         packables = eliminateDuplicates(self.packables())
         for obj in packables:
             if type(aq_base(obj)) in [RRDTemplate]:
-                self.exportToSeparateFile(obj, 'templates')
+                self.exportToSeparateFile(obj, "templates")
             else:
-                xml.write('<!-- %r -->\n' % (obj.getPrimaryPath(),))
-                obj.exportXml(xml,['devices','networks','pack','rrdTemplates'],True)
+                xml.write("<!-- %r -->\n" % (obj.getPrimaryPath(),))
+                obj.exportXml(
+                    xml, ["devices", "networks", "pack", "rrdTemplates"], True
+                )
                 if type(aq_base(obj)) in [DeviceClass]:
                     for tpl in obj.getAllRRDTemplates():
-                        self.exportToSeparateFile(tpl, 'templates')
+                        self.exportToSeparateFile(tpl, "templates")
 
         xml.write("</objects>\n")
 
-        objects = file(os.path.join(path, 'objects.xml'), 'w')
-        objects.write(xml.getvalue())
-        objects.close()
+        with open(os.path.join(path, "objects.xml"), "w") as objects:
+            objects.write(xml.getvalue())
 
         # Create skins dir if not there
-        needDir(self.path('skins'))
+        needDir(self.path("skins"))
 
         # Create __init__.py
-        init = self.path('__init__.py')
+        init = self.path("__init__.py")
         if not os.path.isfile(init):
-            fp = file(init, 'w')
-            fp.write(
-'''
+            with open(init, "w") as fp:
+                fp.write(
+                    """
 from Products.CMFCore.DirectoryView import registerDirectory
 registerDirectory("skins", globals())
-''')
-            fp.close()
+"""
+                )
 
         if self.isEggPack():
-            # Create the egg
-            exportDir = needDir(zenPath('export'))
-            eggPath = self.eggPath()
-            os.chdir(eggPath)
-            for tmp_dir in ['build', 'dist']:
-                if os.path.isdir(os.path.join(eggPath, tmp_dir)):
-                    os.system('rm -rf {}/*'.format(tmp_dir))
-            p = subprocess.Popen('python setup.py bdist_egg',
-                            stderr=sys.stderr,
-                            shell=True,
-                            cwd=eggPath)
-            p.wait()
-            os.system('cp dist/* %s' % exportDir)
-            exportFileName = self.eggName()
+            exportFileName = self._export_egg()
         else:
-            # Create about.txt
-            about = self.path(CONFIG_FILE)
-            values = {}
-            parser = ConfigParser.SafeConfigParser()
-            if os.path.isfile(about):
-                try:
-                    parser.read(about)
-                    values = dict(parser.items(CONFIG_SECTION_ABOUT))
-                except ConfigParser.Error:
-                    pass
-            current = [(p['id'], str(getattr(self, p['id'], '') or ''))
-                        for p in self._properties]
-            values.update(dict(current))
-            if not parser.has_section(CONFIG_SECTION_ABOUT):
-                parser.add_section(CONFIG_SECTION_ABOUT)
-            for key, value in values.items():
-                parser.set(CONFIG_SECTION_ABOUT, key, value)
-            fp = file(about, 'w')
-            try:
-                parser.write(fp)
-            finally:
-                fp.close()
-            # Create the zip file
-            path = needDir(zenPath('export'))
-            from zipfile import ZipFile, ZIP_DEFLATED
-            zipFilePath = os.path.join(path, '%s.zip' % self.id)
-            zf = ZipFile(zipFilePath, 'w', ZIP_DEFLATED)
-            base = Products.__path__[-1]
-            for p, ds, fd in os.walk(self.path()):
-                if p.split('/')[-1].startswith('.'): continue
-                for f in fd:
-                    if f.startswith('.'): continue
-                    if f.endswith('.pyc'): continue
-                    filename = os.path.join(p, f)
-                    zf.write(filename, filename[len(base)+1:])
-                ds[:] = [d for d in ds if d[0] != '.']
-            zf.close()
-            exportFileName = '%s.zip' % self.id
+            exportFileName = self._export_zip()
 
-        audit('UI.ZenPack.Export', exportFileName)
+        audit("UI.ZenPack.Export", exportFileName)
 
         if REQUEST:
-            dlLink = '- <a target="_blank" href="%s/manage_download">' \
-                     'Download Zenpack</a>' % getUtility(IVirtualRoot).ensure_virtual_root(self.absolute_url_path())
+            dlLink = (
+                '- <a target="_blank" href="%s/manage_download">'
+                "Download Zenpack</a>"
+                % getUtility(IVirtualRoot).ensure_virtual_root(
+                    self.absolute_url_path()
+                )
+            )
             messaging.IMessageSender(self).sendToBrowser(
-                'ZenPack Exported',
-                'ZenPack exported to $ZENHOME/export/%s %s' %
-                        (exportFileName, dlLink if download == 'yes' else ''),
-                messaging.CRITICAL if download == 'yes' else messaging.INFO
+                "ZenPack Exported",
+                "ZenPack exported to $ZENHOME/export/%s %s"
+                % (exportFileName, dlLink if download == "yes" else ""),
+                messaging.CRITICAL if download == "yes" else messaging.INFO,
             )
             return self.callZenScreen(REQUEST)
 
         return exportFileName
+
+    def _export_egg(self):
+        # Create the egg
+        exportDir = needDir(zenPath("export"))
+        eggPath = self.eggPath()
+        os.chdir(eggPath)
+        for tmp_dir in ["build", "dist"]:
+            if os.path.isdir(os.path.join(eggPath, tmp_dir)):
+                os.system("rm -rf {}/*".format(tmp_dir))  # noqa: S605
+        p = subprocess.Popen(  # noqa: S602
+            "python setup.py bdist_egg",  # noqa: S607
+            stderr=sys.stderr,
+            shell=True,
+            cwd=eggPath,
+        )
+        p.wait()
+        os.system("cp dist/* %s" % exportDir)  # noqa: S605
+        return self.eggName()
+
+    def _export_zip(self):
+        # Create about.txt
+        about = self.path(CONFIG_FILE)
+        values = {}
+        parser = ConfigParser.SafeConfigParser()
+        if os.path.isfile(about):
+            try:
+                parser.read(about)
+                values = dict(parser.items(CONFIG_SECTION_ABOUT))
+            except ConfigParser.Error:
+                pass
+        current = [
+            (p["id"], str(getattr(self, p["id"], "") or ""))
+            for p in self._properties
+        ]
+        values.update(dict(current))
+        if not parser.has_section(CONFIG_SECTION_ABOUT):
+            parser.add_section(CONFIG_SECTION_ABOUT)
+        for key, value in values.items():
+            parser.set(CONFIG_SECTION_ABOUT, key, value)
+        with open(about, "w") as fp:
+            parser.write(fp)
+        # Create the zip file
+        path = needDir(zenPath("export"))
+        from zipfile import ZipFile, ZIP_DEFLATED
+
+        zipFilePath = os.path.join(path, "%s.zip" % self.id)
+        with ZipFile(zipFilePath, "w", ZIP_DEFLATED) as zf:
+            base = Products.__path__[-1]
+            for p, ds, fd in os.walk(self.path()):
+                if p.split("/")[-1].startswith("."):
+                    continue
+                for f in fd:
+                    if f.startswith("."):
+                        continue
+                    if f.endswith(".pyc"):
+                        continue
+                    filename = os.path.join(p, f)
+                    zf.write(filename, filename[len(base) + 1 :])
+                ds[:] = [d for d in ds if d[0] != "."]
+        return "%s.zip" % self.id
 
     def manage_download(self, REQUEST):
         """
@@ -864,69 +988,64 @@ registerDirectory("skins", globals())
         if self.isEggPack():
             filename = self.eggName()
         else:
-            filename = '%s.zip' % self.id
-        path = os.path.join(zenPath('export'), filename)
+            filename = "%s.zip" % self.id
+        path = os.path.join(zenPath("export"), filename)
         if os.path.isfile(path):
-            REQUEST.RESPONSE.setHeader('content-type', 'application/zip')
-            REQUEST.RESPONSE.setHeader('content-disposition',
-                                        'attachment; filename=%s' %
-                                        filename)
-            zf = file(path, 'r')
-            try:
+            REQUEST.RESPONSE.setHeader("content-type", "application/zip")
+            REQUEST.RESPONSE.setHeader(
+                "content-disposition", "attachment; filename=%s" % filename
+            )
+            with open(path, "r") as zf:
                 REQUEST.RESPONSE.write(zf.read())
-            finally:
-                zf.close()
         else:
             messaging.IMessageSender(self).sendToBrowser(
-                'Error',
-                'An error has occurred. The ZenPack could not be exported.',
-                priority=messaging.WARNING
+                "Error",
+                "An error has occurred. The ZenPack could not be exported.",
+                priority=messaging.WARNING,
             )
             return self.callZenScreen(REQUEST)
-
 
     def _getClassesByPath(self, name):
         dsClasses = []
         for path, dirs, files in os.walk(self.path(name)):
-            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
             for f in files:
-                if not f.startswith('.') \
-                        and f.endswith('.py') \
-                        and not f == '__init__.py':
-                    subPath = path[len(self.path()):]
-                    parts = subPath.strip('/').split('/')
-                    parts.append(f[:f.rfind('.')])
-                    modName = '.'.join([self.moduleName()] + parts)
+                if (
+                    not f.startswith(".")
+                    and f.endswith(".py")
+                    and not f == "__init__.py"
+                ):
+                    subPath = path[len(self.path()) :]
+                    parts = subPath.strip("/").split("/")
+                    parts.append(f[: f.rfind(".")])
+                    modName = ".".join([self.moduleName()] + parts)
                     dsClasses.append(importClass(modName))
         return dsClasses
 
     def getDataSourceClasses(self):
-        return self._getClassesByPath('datasources')
+        return self._getClassesByPath("datasources")
 
     def getThresholdClasses(self):
-        return self._getClassesByPath('thresholds')
+        return self._getClassesByPath("thresholds")
 
     def getFilenames(self):
         """
         Get the filenames of a ZenPack exclude .svn, .pyc and .xml files
         """
         filenames = []
-        for root, dirs, files in os.walk(self.path()):
-            if root.find('.svn') == -1:
-                    for f in files:
-                        if not f.endswith('.pyc') \
-                        and not f.endswith('.xml'):
-                            filenames.append('%s/%s' % (root, f))
+        for root, _, files in os.walk(self.path()):
+            if root.find(".svn") == -1:
+                for f in files:
+                    if not f.endswith(".pyc") and not f.endswith(".xml"):
+                        filenames.append("%s/%s" % (root, f))
         return filenames
-
 
     def getDaemonPath(self):
         """
         Returns the directory in which daemons are located
         @return: string
         """
-        return os.path.join(self.path(), 'daemons')
-
+        return os.path.join(self.path(), "daemons")
 
     def getDaemonNames(self):
         """
@@ -935,12 +1054,14 @@ registerDirectory("skins", globals())
         """
         daemonsDir = self.getDaemonPath()
         if os.path.isdir(daemonsDir):
-            daemons = [f for f in os.listdir(daemonsDir)
-                        if os.path.isfile(os.path.join(daemonsDir,f))]
+            daemons = [
+                f
+                for f in os.listdir(daemonsDir)
+                if os.path.isfile(os.path.join(daemonsDir, f))
+            ]
         else:
             daemons = []
         return daemons
-
 
     def stopDaemons(self):
         """
@@ -948,8 +1069,7 @@ registerDirectory("skins", globals())
         Called before an upgrade or a removal of the pack.
         """
         for d in self.getDaemonNames():
-            self.About.doDaemonAction(d, 'stop')
-
+            self.About.doDaemonAction(d, "stop")
 
     def startDaemons(self):
         """
@@ -957,8 +1077,7 @@ registerDirectory("skins", globals())
         Called after an upgrade or an install of the pack.
         """
         for d in self.getDaemonNames():
-            self.About.doDaemonAction(d, 'start')
-
+            self.About.doDaemonAction(d, "start")
 
     def restartDaemons(self):
         """
@@ -966,8 +1085,7 @@ registerDirectory("skins", globals())
         Called after an upgrade or an install of the pack.
         """
         for d in self.getDaemonNames():
-            self.About.doDaemonAction(d, 'restart')
-
+            self.About.doDaemonAction(d, "restart")
 
     def path(self, *parts):
         """
@@ -978,9 +1096,10 @@ registerDirectory("skins", globals())
         """
         if self.isEggPack():
             module = self.getModule()
-            return os.path.join(module.__path__[0], *[p.strip('/') for p in parts])
+            return os.path.join(
+                module.__path__[0], *[p.strip("/") for p in parts]
+            )
         return os.path.join(Products.__path__[-1], self.id, *parts)
-
 
     def isDevelopment(self):
         """
@@ -993,16 +1112,14 @@ registerDirectory("skins", globals())
         Returns False otherwise.
         """
         if self.isEggPack():
-            return os.path.isfile(self.eggPath('setup.py'))
+            return os.path.isfile(self.eggPath("setup.py"))
         return True
-
 
     def isEggPack(self):
         """
         Return True if this is a new-style (egg) zenpack, false otherwise
         """
         return self.eggPack
-
 
     def moduleName(self):
         """
@@ -1012,65 +1129,71 @@ registerDirectory("skins", globals())
             if self.isEggPack():
                 self._modulename = self.getModule().__name__
             else:
-                self._modulename = 'Products.%s' % self.id
+                self._modulename = "Products.%s" % self.id
         return self._modulename
-
 
     def installConfFile(self, filename):
         """
         Helper to install configuration files under "etc/".
         Typcially they should not be deleted on uninstall.
         """
-        filepath = 'etc/' + filename
+        filepath = "etc/" + filename
         self.installFile(filepath, overwriteIfExists=False)
-        self.installFile(filepath, filepath + '.example', overwriteIfExists=True)
-
+        self.installFile(
+            filepath, filepath + ".example", overwriteIfExists=True
+        )
 
     def installBinFile(self, filename):
         """
         Helper to install script files under "bin/".
         Typically they should be deleted on uninstall with removeBinFile().
         """
-        filepath = 'bin/' + filename
+        filepath = "bin/" + filename
         self.installFile(filepath, overwriteIfExists=True, symLink=True)
 
-
     def removeBinFile(self, filename):
-        filepath = 'bin/' + filename
+        filepath = "bin/" + filename
         self.removeFile(filepath)
 
-
-    def installFile(self, relativePath, relativeDestPath=None,
-                    overwriteIfExists=True, symLink=False):
+    def installFile(
+        self,
+        relativePath,
+        relativeDestPath=None,
+        overwriteIfExists=True,
+        symLink=False,
+    ):
         """
         Install a file from this zenpack to ZENHOME upon installation.
-        By default, relativePath is for the zenpack and its ZENHOME destination.
+        By default, relativePath is for the zenpack and its ZENHOME
+        destination.
         Returns True if installed, False/Exception otherwise.
 
         Example: self.installFile('etc/myzenpack.data')
         """
         srcPath = self.path(relativePath)
-        destPath = zenPath(relativePath) if relativeDestPath is None \
-                                         else zenPath(relativeDestPath)
+        destPath = (
+            zenPath(relativePath)
+            if relativeDestPath is None
+            else zenPath(relativeDestPath)
+        )
 
         if not overwriteIfExists and os.path.lexists(destPath):
             return False
         if not os.path.exists(srcPath):
-            raise ZenPackException('Missing source file %s' % srcPath)
+            raise ZenPackException("Missing source file %s" % srcPath)
         if os.path.lexists(destPath):
             os.remove(destPath)
             # If the file is open for edit in Unix then it'll still exist
             # until it's closed, which means we can't overwrite it.
             if os.path.lexists(destPath):
-                raise ZenPackException('Failed to remove file %s' % destPath)
+                raise ZenPackException("Failed to remove file %s" % destPath)
         if symLink:
             os.symlink(srcPath, destPath)
         else:
             shutil.copy2(srcPath, destPath)
         if not os.path.lexists(destPath):
-            raise ZenPackException('Failed to write file %s' % destPath)
+            raise ZenPackException("Failed to write file %s" % destPath)
         return True
-
 
     def removeFile(self, relativePath, mustSucceed=False):
         """
@@ -1082,41 +1205,44 @@ registerDirectory("skins", globals())
         if os.path.lexists(destPath):
             os.remove(destPath)
             if mustSucceed and os.path.lexists(destPath):
-                raise ZenPackException('Failed to remove file %s' % destPath)
-
+                raise ZenPackException("Failed to remove file %s" % destPath)
 
     ##########
     # Egg-related methods
     # Nothing below here should be called for old-style zenpacks
     ##########
 
-
     def writeSetupValues(self):
         """
         Write appropriate values to the setup.py file
         """
         import Products.ZenUtils.ZenPackCmd as ZenPackCmd
+
         if not self.isEggPack():
-            raise ZenPackException('Calling writeSetupValues on non-egg zenpack.')
+            raise ZenPackException(
+                "Calling writeSetupValues on non-egg zenpack."
+            )
         # I don't think we need to specify packages anymore now that we are
         # using find_packages() in setup.py
         packages = []
-        parts = self.id.split('.')
+        parts = self.id.split(".")
         for i in range(len(parts)):
-            packages.append('.'.join(parts[:i+1]))
+            packages.append(".".join(parts[: i + 1]))
 
-        attrs = dict(
-            NAME=self.id,
-            VERSION=self.version,
-            AUTHOR=self.author,
-            LICENSE=self.license,
-            NAMESPACE_PACKAGES=packages[:-1],
-            PACKAGES = packages,
-            INSTALL_REQUIRES = ['%s%s' % d for d in self.dependencies.items()],
-            COMPAT_ZENOSS_VERS = self.compatZenossVers,
-            PREV_ZENPACK_NAME = self.prevZenPackName,
-            )
-        ZenPackCmd.WriteSetup(self.eggPath('setup.py'), attrs)
+        attrs = {
+            "NAME": self.id,
+            "VERSION": self.version,
+            "AUTHOR": self.author,
+            "LICENSE": self.license,
+            "NAMESPACE_PACKAGES": packages[:-1],
+            "PACKAGES": packages,
+            "INSTALL_REQUIRES": [
+                "%s%s" % d for d in self.dependencies.items()
+            ],
+            "COMPAT_ZENOSS_VERS": self.compatZenossVers,
+            "PREV_ZENPACK_NAME": self.prevZenPackName,
+        }
+        ZenPackCmd.WriteSetup(self.eggPath("setup.py"), attrs)
 
     def writeLicense(self):
         """
@@ -1126,32 +1252,34 @@ registerDirectory("skins", globals())
             return
 
         license_text = ExampleLicenses.LICENSES[self.license] % {
-            'year': datetime.date.today().year,
-            'author': self.author and self.author or '<AUTHOR>',
-            }
+            "year": datetime.date.today().year,
+            "author": self.author and self.author or "<AUTHOR>",
+        }
 
-        with open(self.path('LICENSE.txt'), 'w') as license_file:
-            license_file.write(license_text.lstrip('\n'))
+        with open(self.path("LICENSE.txt"), "w") as license_file:
+            license_file.write(license_text.lstrip("\n"))
 
     def buildEggInfo(self):
         """
         Rebuild the egg info to update dependencies, etc
         """
-        p = subprocess.Popen('python setup.py egg_info',
-                        stderr=sys.stderr,
-                        shell=True,
-                        cwd=self.eggPath())
+        p = subprocess.Popen(  # noqa: S602
+            "python setup.py egg_info",  # noqa: S607
+            stderr=sys.stderr,
+            shell=True,
+            cwd=self.eggPath(),
+        )
         p.wait()
-
 
     def getDistribution(self):
         """
         Return the distribution that provides this zenpack
         """
         if not self.isEggPack():
-            raise ZenPackException('Calling getDistribution on non-egg zenpack.')
+            raise ZenPackException(
+                "Calling getDistribution on non-egg zenpack."
+            )
         return pkg_resources.get_distribution(self.id)
-
 
     def getEntryPoint(self):
         """
@@ -1159,16 +1287,19 @@ registerDirectory("skins", globals())
         distribution entry map for zenoss.zenopacks.
         """
         if not self.isEggPack():
-            raise ZenPackException('Calling getEntryPoints on non-egg zenpack.')
+            raise ZenPackException(
+                "Calling getEntryPoints on non-egg zenpack."
+            )
         dist = self.getDistribution()
-        entryMap = pkg_resources.get_entry_map(dist, 'zenoss.zenpacks')
+        entryMap = pkg_resources.get_entry_map(dist, "zenoss.zenpacks")
         if not entryMap or len(entryMap) > 1:
-            raise ZenPackException('A ZenPack egg must contain exactly one'
-                    ' zenoss.zenpacks entry point.  This egg appears to contain'
-                    ' %s such entry points.' % len(entryMap))
+            raise ZenPackException(
+                "A ZenPack egg must contain exactly one"
+                " zenoss.zenpacks entry point.  This egg appears to contain"
+                " %s such entry points." % len(entryMap)
+            )
         packName, packEntry = entryMap.items()[0]
         return (packName, packEntry)
-
 
     def getModule(self):
         """
@@ -1176,27 +1307,24 @@ registerDirectory("skins", globals())
         then retrieve it.
         """
         if not self.isEggPack():
-            raise ZenPackException('Calling getModule on non-egg zenpack.')
+            raise ZenPackException("Calling getModule on non-egg zenpack.")
         _, packEntry = self.getEntryPoint()
         return packEntry.load()
-
 
     def eggPath(self, *parts):
         """
         Return the path to the egg supplying this zenpack
         """
         if not self.isEggPack():
-            raise ZenPackException('Calling eggPath on non-egg zenpack.')
+            raise ZenPackException("Calling eggPath on non-egg zenpack.")
         d = self.getDistribution()
-        return os.path.join(d.location, *[p.strip('/') for p in parts])
-
+        return os.path.join(d.location, *[p.strip("/") for p in parts])
 
     def eggName(self):
         if not self.isEggPack():
-            raise ZenPackException('Calling eggName on non-egg zenpack.')
+            raise ZenPackException("Calling eggName on non-egg zenpack.")
         d = self.getDistribution()
-        return d.egg_name() + '.egg'
-
+        return d.egg_name() + ".egg"
 
     def shouldDeleteFilesOnRemoval(self):
         """
@@ -1206,24 +1334,23 @@ registerDirectory("skins", globals())
         deleted, otherwise it is not.
         """
         eggPath = self.eggPath()
-        oneFolderUp = eggPath[:eggPath.rfind('/')]
-        if oneFolderUp == zenPath('ZenPacks'):
+        oneFolderUp = eggPath[: eggPath.rfind("/")]
+        if oneFolderUp == zenPath("ZenPacks"):
             delete = True
         else:
             delete = False
         return delete
-
 
     def getPackageName(self):
         """
         Return the name of submodule of zenpacks that contains this zenpack.
         """
         if not self.isEggPack():
-            raise ZenPackException('Calling getPackageName on a non-egg '
-                                        'zenpack')
+            raise ZenPackException(
+                "Calling getPackageName on a non-egg zenpack"
+            )
         modName = self.moduleName()
-        return modName.split('.')[1]
-
+        return modName.split(".")[1]
 
     def getEligibleDependencies(self):
         """
@@ -1236,19 +1363,17 @@ registerDirectory("skins", globals())
                 if zp.id != self.id and zp.isEggPack():
                     result.append(zp)
             except AttributeError:
-               pass
+                pass
         return result
-
 
     def isInZenPacksDir(self):
         """
         Return True if the egg is located in the ZenPacks directory,
         False otherwise.
         """
-        zpDir = zenPath('ZenPacks') + '/'
+        zpDir = zenPath("ZenPacks") + "/"
         eggDir = self.eggPath()
         return eggDir.startswith(zpDir)
-
 
     def isBroken(self):
         """
@@ -1268,12 +1393,11 @@ registerDirectory("skins", globals())
 
         # If packables throws an exception the pack is broken.
         try:
-            unused = self.packables()
+            _ = self.packables()
         except Exception:
             return True
 
         return False
-
 
     def getServiceTag(self):
         """
@@ -1283,18 +1407,17 @@ registerDirectory("skins", globals())
         """
         return self.moduleName()
 
-
     def getServiceDefinitionFiles(self):
         """
         Returns a list of files containing services to be installed.
 
-        This routine can be overridden in order to supply a non-standard list of
-         files. See installServicesFromFiles() for file format.
+        This routine can be overridden in order to supply a non-standard list
+        of files. See installServicesFromFiles() for file format.
+
         :returns: absolute file paths
         :rtype: list of strings
         """
-        return glob.glob(self.path('service_definition', '*.json'))
-
+        return glob.glob(self.path("service_definition", "*.json"))
 
     def installServices(self):
         """
@@ -1305,20 +1428,28 @@ registerDirectory("skins", globals())
             return
         if self.getServiceDefinitionFiles():
             sdFiles = self.getServiceDefinitionFiles()
-            toConfigPath = lambda x: os.path.join(os.path.dirname(x),'-CONFIGS-')
-            configFileMaps = [DirectoryConfigContents(toConfigPath(i)) for i in sdFiles]
-            self.installServicesFromFiles(sdFiles, configFileMaps, self.getServiceTag())
+
+            def toConfigPath(x):
+                return os.path.join(os.path.dirname(x), "-CONFIGS-")
+
+            configFileMaps = [
+                DirectoryConfigContents(toConfigPath(i)) for i in sdFiles
+            ]
+            self.installServicesFromFiles(
+                sdFiles, configFileMaps, self.getServiceTag()
+            )
         elif self.getDaemonNames():
             import Products.ZenModel as _zm
+
             templatefile = os.path.join(
                 os.path.dirname(_zm.__file__), "data", "default_service.json"
             )
             with open(templatefile) as tf:
                 template = tf.read()
-            daemonPaths = glob.glob(os.path.join(self.getDaemonPath(), '*'))
-            self.installDefaultCollectorServices(daemonPaths,
-                                                 template,
-                                                 self.getServiceTag())
+            daemonPaths = glob.glob(os.path.join(self.getDaemonPath(), "*"))
+            self.installDefaultCollectorServices(
+                daemonPaths, template, self.getServiceTag()
+            )
 
     @staticmethod
     def normalizeService(service, configMap, tag):
@@ -1335,49 +1466,61 @@ registerDirectory("skins", globals())
         """
         import Products.ZenModel as _zm
 
-        service.setdefault('Tags', []).append(tag)
-        if 'ImageID' in service and service['ImageID'] == '':
-            service['ImageID'] = os.environ['SERVICED_SERVICE_IMAGE']
-        for key, value in service.get('ConfigFiles', dict()).items():
-            if value.get('Content', '') == '':
+        service.setdefault("Tags", []).append(tag)
+        if "ImageID" in service and service["ImageID"] == "":
+            service["ImageID"] = os.environ["SERVICED_SERVICE_IMAGE"]
+        for key, value in service.get("ConfigFiles", {}).items():
+            if value.get("Content", "") == "":
                 try:
-                    value['Content'] = configMap[key]
+                    value["Content"] = configMap[key]
                 except KeyError:
                     pass
 
         defaultLogConfigsTemplateFile = os.path.join(
             os.path.dirname(_zm.__file__),
             "data",
-            "default_service_logconfigs.json"
+            "default_service_logconfigs.json",
         )
         with open(defaultLogConfigsTemplateFile) as tf:
             defaultLogConfigsTemplate = tf.read()
-        defaultLogConfigs = json.loads(defaultLogConfigsTemplate % {'zenhome': zenPath()})
-        logConfigs = service.setdefault('LogConfigs', [])
-        logConfigs.extend(lc for lc in defaultLogConfigs if lc not in logConfigs)
+        defaultLogConfigs = json.loads(
+            defaultLogConfigsTemplate % {"zenhome": zenPath()}
+        )
+        logConfigs = service.setdefault("LogConfigs", [])
+        logConfigs.extend(
+            lc for lc in defaultLogConfigs if lc not in logConfigs
+        )
         return service
 
     def templateParams(self):
         # Get 'Context' from root service
         cpClient = ControlPlaneClient(**getConnectionSettings())
         serviceTree = ServiceTree(cpClient.queryServices("*"))
-        tenant = serviceTree.matchServicePath(ZenPack.currentServiceId, '/')[0]
-        context = tenant._data.get('Context', {})
+        tenant = serviceTree.matchServicePath(ZenPack.currentServiceId, "/")[0]
+        context = tenant._data.get("Context", {})
 
         # Determine template parameters
-        templateParams = defaultdict(lambda:'')
-        templateParams.update({'zenhome':zenPath(),
-                               'ZenPack.Default.RAMCommitment':"",
-                               'varpath':varPath()})
-        templateParams.update((key, val) for key, val in context.items()
-            if key.startswith('ZenPack.Default'))
+        templateParams = defaultdict(lambda: "")
+        templateParams.update(
+            {
+                "zenhome": zenPath(),
+                "ZenPack.Default.RAMCommitment": "",
+                "varpath": varPath(),
+            }
+        )
+        templateParams.update(
+            (key, val)
+            for key, val in context.items()
+            if key.startswith("ZenPack.Default")
+        )
         templateParams.update(daemondir=self.getDaemonPath())
         return templateParams
 
     def installDefaultCollectorServices(self, daemonPaths, template, tag):
         """
-        Installs a service definition appropriate for a collector daemon for each
-        daemon in a list.  Generates a config file using the daemon's genconf.
+        Installs a service definition appropriate for a collector daemon for
+        each daemon in a list.  Generates a config file using the daemon's
+        genconf.
         Installs the service on each collector.
 
         @param daemonPaths: paths to daemon executables
@@ -1396,33 +1539,36 @@ registerDirectory("skins", globals())
         serviceDefinitions = []
         for daemonPath in daemonPaths:
             daemon = os.path.basename(daemonPath)
-            if daemon == 'zenexample':
+            if daemon == "zenexample":
                 continue
-            configPath = os.path.join(zenPath(), 'etc', daemon+'.conf')
-            configContents = subprocess.check_output([daemonPath, 'genconf'])
+            configPath = os.path.join(zenPath(), "etc", daemon + ".conf")
+            configContents = subprocess.check_output([daemonPath, "genconf"])  # noqa: S603
             configMap = {configPath: configContents}
             templateParams.update(daemon=daemon, daemonpath=daemonPath)
             service = json.loads(template % templateParams)
             service = ZenPack.normalizeService(service, configMap, tag)
             serviceDefinitions.append(json.dumps(service))
-        servicePaths = ['/zenoss-application/zenoss-collection/hub/collector'] * len(serviceDefinitions)
+        servicePaths = [
+            "/zenoss-application/zenoss-collection/hub/collector"
+        ] * len(serviceDefinitions)
         self.installServiceDefinitions(serviceDefinitions, servicePaths)
-
 
     def installServicesFromFiles(self, serviceFileNames, serviceConfigs, tag):
         """
         Install a set of control center services
 
         Each file is expected to contain a json encoded object with two fields:
-         servicePath: a service path indicating where this service should be installed.
+         servicePath: a service path indicating where this service should be
+            installed.
             See ServiceTree.matchServicePath for description of service path
          serviceDefinition: a service definition object which will be sent to
-            Control Center.  Service definition examples may be be seen by running
+            Control Center.  Service definition examples may be be seen by
+            running
             $ serviced template list $TEMPLATE_ID
-        Each service will be tagged with the given tag in order to enable discovery
-        for ZenPack removal.  If a service definition has an ImageID field, but
-        the field is empty, the field will be set to the value of the
-        SERVICED_SERVICE_IMAGE environment variable.
+        Each service will be tagged with the given tag in order to enable
+        discovery for ZenPack removal.  If a service definition has an
+        ImageID field, but the field is empty, the field will be set to the
+        value of the SERVICED_SERVICE_IMAGE environment variable.
 
         :param serviceFileNames: file paths, each containing a service
         :type serviceFileNames: list of strings
@@ -1433,36 +1579,36 @@ registerDirectory("skins", globals())
         """
         if not ZenPack.currentServiceId:
             return
-        paths, definitions = [],[]
+        paths, definitions = [], []
 
         templateParams = self.templateParams()
 
         for fileName, configMap in zip(serviceFileNames, serviceConfigs):
             serviceDef = self._loadServiceDefinition(fileName)
             service = json.loads(serviceDef % templateParams)
-            definition = ZenPack.normalizeService(service['serviceDefinition'],
-                                                  configMap, tag)
+            definition = ZenPack.normalizeService(
+                service["serviceDefinition"], configMap, tag
+            )
             definitions.append(json.dumps(definition))
-            paths.append(service['servicePath'])
+            paths.append(service["servicePath"])
         self.installServiceDefinitions(definitions, paths)
-
 
     def _loadServiceDefinition(self, fileName):
         content = ""
-        with open(fileName, 'r') as fh:
+        with open(fileName, "r") as fh:
             content = fh.read()
         return content
 
-
     def installServiceDefinitions(self, serviceDefs, servicePaths):
         """
-        Install a service into Control Center
+        Install a service into Control Center.
 
-        Install a service (described by a service definition string) at a given
-             location in the service tree.  Multiple service/location pairs can
-             be specified.
+        Install a service (described by a service definition string) at a
+        given location in the service tree.  Multiple service/location pairs
+        can be specified.
 
-        :param serviceDefs: json encoded representation(s) of service definition
+        :param serviceDefs: json encoded representation(s) of service
+            definition
         :type serviceDefs: string or iterable of strings
         :param servicePaths: service path(s) at which to install service
         :type servicePaths: string or iterable of strings.  See
@@ -1472,22 +1618,9 @@ registerDirectory("skins", globals())
         if not ZenPack.currentServiceId:
             return
 
-        # Handle case where input is single strings (vs parallel lists)
-        if isinstance(serviceDefs, basestring):
-            serviceDefs = [serviceDefs]
-        if isinstance(servicePaths, basestring):
-            servicePaths = [servicePaths]
-
-        serviceDefs = [json.loads(sd) for sd in serviceDefs]
-        servicePaths = [p if p != "/hub/collector" else "/zenoss-application/zenoss-collection/hub/collector" for p in servicePaths]
-        existingPaths = {}
-
-        for sd, sp in zip(serviceDefs, servicePaths):
-            sd["Services"] = []
-            sp = "" if sp == "/" else sp
-            existingPaths[sp + "/=" + sd["Name"]] = sd
-            for tag in sd["Tags"]:
-                existingPaths[sp + "/" + tag] = sd
+        serviceDefs = self._load_service_definitions(serviceDefs)
+        servicePaths = self._validate_service_paths(servicePaths)
+        existingPaths = self._get_existing_paths(serviceDefs, servicePaths)
 
         services = []
         parentServicePaths = []
@@ -1503,9 +1636,13 @@ registerDirectory("skins", globals())
         ctx = servicemigration.ServiceContext()
 
         for service, parentServicePath in zip(services, parentServicePaths):
-            parentServices = serviceTree.matchServicePath(ZenPack.currentServiceId, parentServicePath)
+            parentServices = serviceTree.matchServicePath(
+                ZenPack.currentServiceId, parentServicePath
+            )
             for parentService in parentServices:
-                ctx._ServiceContext__deployService(json.dumps(service), parentService.id)
+                ctx._ServiceContext__deployService(
+                    json.dumps(service), parentService.id
+                )
 
         try:
             ctx.commit()
@@ -1515,10 +1652,33 @@ registerDirectory("skins", globals())
             else:
                 raise e
 
+    def _load_service_definitions(self, serviceDefs):
+        if isinstance(serviceDefs, six.string_types):
+            serviceDefs = [serviceDefs]
+        return [json.loads(sd) for sd in serviceDefs]
+
+    def _validate_service_paths(self, servicePaths):
+        if isinstance(servicePaths, six.string_types):
+            servicePaths = [servicePaths]
+        return [
+            p
+            if (p != "/hub/collector")
+            else "/zenoss-application/zenoss-collection/hub/collector"
+            for p in servicePaths
+        ]
+
+    def _get_existing_paths(self, serviceDefs, servicePaths):
+        existingPaths = {}
+        for sd, sp in zip(serviceDefs, servicePaths):
+            sd["Services"] = []
+            sp = "" if sp == "/" else sp
+            existingPaths[sp + "/=" + sd["Name"]] = sd
+            for tag in sd["Tags"]:
+                existingPaths[sp + "/" + tag] = sd
+        return existingPaths
+
     def getExampleLicenseNames(self):
         return sorted(ExampleLicenses.LICENSES.keys())
-
-
 
 
 # ZenPackBase is here for backwards compatibility with older installed
