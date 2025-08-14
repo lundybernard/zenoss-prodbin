@@ -39,7 +39,9 @@ class TrapFilterTest(TestCase):
         logging.disable(logging.NOTSET)
 
     def testDropV1EventForGenericTrapInclusion(t):
-        genericTrap = 0
+        # trapfilter.py's GenericTrapFilterDefintion uses str types for keys.
+        # Updating here to ensure consistency.
+        genericTrap = '0'
         filterDef = GenericTrapFilterDefinition(99, "include", genericTrap)
         t.filter._filterspec._v1Traps[genericTrap] = filterDef
 
