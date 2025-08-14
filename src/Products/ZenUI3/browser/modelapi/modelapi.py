@@ -68,7 +68,8 @@ class CollectorInfo(BrowserView):
         collectorDaemons = []
 
         for hub in self.context.dmd.Monitors.Hub.objectValues(spec="HubConf"):
-            hubService = appfacade.queryHubDaemons(hub.id)[0]
+            # Filter out the main ZenHub service
+            hubService = filter(lambda svc: svc.name.lower() == "zenhub", appfacade.queryHubDaemons(hub.id))[0]
             zenHubs.append(
                 dict(
                     id="hub_{}".format(hub.id),
