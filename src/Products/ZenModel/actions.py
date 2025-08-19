@@ -511,6 +511,7 @@ class EmailAction(IActionBase, TargetableAction):
                 if result:
                     log.debug("Notification '%s' sent emails to: %s",
                              notification.id, targets)
+                    break
                 elif "socket.error" in errorMsg:
                     if attempt < num_of_attempts:
                         current_timeout = attempt * 5
