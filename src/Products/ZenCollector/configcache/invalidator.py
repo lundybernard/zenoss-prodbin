@@ -146,10 +146,11 @@ class Invalidator(object):
         self.log.info(
             "polling for device changes every %s seconds", self.interval
         )
+        self.ctx.session.sync()  # ensure database connection
         while not self.ctx.controller.shutdown:
             try:
-                self.ctx.session.sync()
                 invalidations = poller.poll()
+                self.ctx.session.sync()
 
                 self._metrics.received.mark(len(invalidations))
                 self._metrics.processed.update(len(invalidations))
