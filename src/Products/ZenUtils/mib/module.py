@@ -138,24 +138,24 @@ class ModuleManager(object):
         try:
             function(name, logger=log, **values)
         except BadRequest:
-            self.log.warn(
+            log.warn(
                 "Unable to add %s id '%s' as this name is "
                 "reserved for use by Zope", "node", name
             )
             newName = '_'.join([name, moduleName])
-            self.log.warn(
+            log.warn(
                 "Trying to add %s '%s' as '%s'",
                 "node", name, newName
             )
             try:
                 function(newName, logger=log, **values)
             except Exception:
-                self.log.warn(
+                log.warn(
                     "Unable to add %s id '%s' -- skipping",
                     "node", newName
                 )
             else:
-                self.log.warn(
+                log.warn(
                     "Renamed '%s' to '%s' and added to MIB %s",
                     name, newName, "node"
                 )
