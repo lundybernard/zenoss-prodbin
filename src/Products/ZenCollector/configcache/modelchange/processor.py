@@ -135,16 +135,25 @@ class ApplyFilters(Action):
 
     def __call__(self, invalidation):
         for fltr in self._filters:
-            result = fltr.include(invalidation.entity)
-            if result in (FILTER_INCLUDE, FILTER_EXCLUDE):
-                if result is FILTER_EXCLUDE:
-                    log.debug(
-                        "invalidation excluded by filter  filter=%r entity=%s",
-                        fltr,
-                        invalidation.entity,
-                    )
-                break
+            try:
+                result = fltr.include(invalidation.entity)
+            except Exception as ex:
+                if log.isEnabledFor(logging.DEBUG):
+                    log.exception("invalidation filter error")
+                else:
+                    log.error("invalidation filter error: %s", ex)
+            else:
+                if result in (FILTER_INCLUDE, FILTER_EXCLUDE):
+                    if result is FILTER_EXCLUDE:
+                        log.debug(
+                            "invalidation excluded by filter  "
+                            "filter=%r entity=%s",
+                            fltr,
+                            invalidation.entity,
+                        )
+                    break
         else:
+            # Include the invalidation since no filters exclude it.
             result = FILTER_INCLUDE
         if result is not FILTER_EXCLUDE:
             return invalidation
@@ -174,22 +183,42 @@ class ApplyTransforms(Action):
             pass
         transformed = set()
         for adapter_ in adapters:
-            result = adapter_.transformOid(invalidation.oid)
-            if isinstance(result, str):
-                transformed.add(result)
-            elif hasattr(result, "__iter__"):
-                # If the transform didn't give back a string, it should have
-                # given back an iterable
-                transformed.update(result)
+            try:
+                result = adapter_.transformOid(invalidation.oid)
+            except Exception as ex:
+                if log.isEnabledFor(logging.DEBUG):
+                    log.exception(
+                        "IInvalidationOid adaptor error  "
+                        "adaptor=%r entity=%s oid=%s",
+                        adapter_,
+                        invalidation.entity,
+                        invalidation.oid,
+                    )
+                else:
+                    log.error(
+                        "IInvalidationOid adaptor error  "
+                        "error=%s adaptor=%r entity=%s oid=%s",
+                        ex,
+                        adapter_,
+                        invalidation.entity,
+                        invalidation.oid,
+                    )
             else:
-                log.warn(
-                    "IInvalidationOid adaptor returned a bad result  "
-                    "adaptor=%r result=%r entity=%s oid=%s",
-                    adapter_,
-                    result,
-                    invalidation.entity,
-                    invalidation.oid,
-                )
+                if isinstance(result, str):
+                    transformed.add(result)
+                elif hasattr(result, "__iter__"):
+                    # If the transform didn't give back a string,
+                    # it should have given back an iterable
+                    transformed.update(result)
+                else:
+                    log.warn(
+                        "IInvalidationOid adaptor returned a bad result  "
+                        "adaptor=%r result=%r entity=%s oid=%s",
+                        adapter_,
+                        result,
+                        invalidation.entity,
+                        invalidation.oid,
+                    )
         # Remove any Nones a transform may have returned.
         transformed.discard(None)
         # Remove the original OID from the set of transformed OIDs;
