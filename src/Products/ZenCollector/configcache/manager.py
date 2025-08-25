@@ -37,6 +37,7 @@ from .propertymap import DevicePropertyMap
 from .utils import getDeviceConfigServices, OidMapProperties
 
 _default_interval = 30.0  # seconds
+_minimum_interval = 0.5  # seconds
 
 
 class Manager(object):
@@ -121,6 +122,7 @@ class Manager(object):
 
     def _main(self):
         while not self.ctx.controller.shutdown:
+            time_started = time.time()
             try:
                 self.ctx.session.sync()
                 self._expire_timedout_builds()
@@ -131,7 +133,11 @@ class Manager(object):
             finally:
                 # Call cacheGC to aggressively trim the ZODB cache
                 self.ctx.session.cacheGC()
-            self.ctx.controller.wait(self.interval)
+            time_spent = time.time() - time_started
+            # Pause the loop for at least the minimum duration
+            self.ctx.controller.wait(
+                max(self.interval - time_spent, _minimum_interval)
+            )
 
     def _expire_timedout_builds(self):
         timedout = tuple(self._get_device_build_timeouts())
