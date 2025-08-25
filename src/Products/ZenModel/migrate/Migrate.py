@@ -27,7 +27,7 @@ import transaction
 from Products.ZenModel.ZVersion import VERSION
 from Products.ZenReports.ReportLoader import ReportLoader
 from Products.ZenUtils.terminal_size import get_terminal_size
-from Products.ZenUtils.Utils import zenPath
+from Products.ZenUtils.Utils import prodbin_products, zenPath
 from Products.ZenUtils.Version import Version as VersionBase
 from Products.ZenUtils.ZenScriptBase import ZenScriptBase
 
@@ -48,10 +48,9 @@ class Version(VersionBase):
 def cleanup():
     """recursively remove all files ending with .pyc"""
     import os
-    import Products
 
     count = 0
-    for dirname, _, filenames in os.walk(Products.__path__[-1]):
+    for dirname, _, filenames in os.walk(prodbin_products()):
         for fn in filenames:
             if fn.endswith(".pyc"):
                 fullPath = os.path.join(dirname, fn)

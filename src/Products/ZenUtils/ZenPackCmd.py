@@ -21,7 +21,6 @@ import tempfile
 
 import transaction
 import pkg_resources
-import Products
 import zExceptions
 
 from urlparse import urlparse
@@ -50,6 +49,7 @@ from .Utils import (
     binPath,
     cleanupSkins,
     getObjByPath,
+    prodbin_products,
     varPath,
     zenPath,
 )
@@ -623,7 +623,7 @@ def InstallDistAsZenPack(
         # We skipped deleting the existing files from filesystem
         # because maybe they'd be needed in migrate scripts.
         # Delete them now
-        oldZpDir = os.path.join(Products.__path__[-1], existing.id)
+        oldZpDir = os.path.join(prodbin_products(), existing.id)
         if os.path.islink(oldZpDir):
             os.remove(oldZpDir)
         else:
@@ -1385,13 +1385,13 @@ class ZenPackCmd(ZenScriptBase):
             dest="filesOnly",
             action="store_true",
             default=False,
-            help="install onto filesystem but not into " "zenoss",
+            help="install onto filesystem but not into zenoss",
         )
         self.parser.add_option(
             "--previousversion",
             dest="previousVersion",
             default=None,
-            help="Previous version of the zenpack;" " used during upgrades",
+            help="Previous version of the zenpack; used during upgrades",
         )
         self.parser.prog = "zenpack"
         ZenScriptBase.buildOptions(self)

@@ -172,12 +172,10 @@ class ZenModeler(PBDaemon):
         Get our configuration from zenhub
         """
         # add in the code to fetch cycle time, etc.
-        self.log.info("Getting configuration from ZenHub...")
-
         svc = self.config()
 
-        self.log.debug("fetching monitor properties")
         items = yield svc.callRemote("propertyItems")
+        self.log.info("retrieved service properties")
         items = dict(items)
         # If the cycletime option is not specified or zero, then use the
         # modelerCycleInterval value in the database.
@@ -190,20 +188,21 @@ class ZenModeler(PBDaemon):
         )
         reactor.callLater(self.configCycleInterval * 60, self.configure)
 
-        self.log.debug("Getting threshold classes...")
         classes = yield svc.callRemote("getThresholdClasses")
+        self.log.info("retrieved threshold classes")
         self.remote_updateThresholdClasses(classes)
 
-        self.log.debug("Getting collector thresholds...")
         thresholds = yield svc.callRemote("getCollectorThresholds")
+        self.log.info("retrieved thresholds")
         self.getThresholds().updateList(thresholds)
 
-        self.log.debug("Getting collector plugins for each DeviceClass")
         self.classCollectorPlugins = yield svc.callRemote(
             "getClassCollectorPlugins"
         )
+        self.log.info("retrieved device class plugins")
 
         self.configLoaded = True
+        self.log.info("finished retrieving zenmodeler configuration")
 
     def config(self):
         """
@@ -775,7 +774,7 @@ class ZenModeler(PBDaemon):
                 self.finished.append(collectorClient)
             except ValueError:
                 self.log.debug(
-                    "Client %s not found in in the list" " of active clients",
+                    "Client %s not found in the list of active clients",
                     device.id,
                 )
             self.log.info(
@@ -832,12 +831,12 @@ class ZenModeler(PBDaemon):
         ARBITRARY_BEAT = 30
         reactor.callLater(ARBITRARY_BEAT, self.heartbeat)
         if self.options.cycle:
-            evt = dict(
-                eventClass=Heartbeat,
-                component="zenmodeler",
-                device=self.options.monitor,
-                timeout=self.options.heartbeatTimeout,
-            )
+            evt = {
+                "eventClass": Heartbeat,
+                "component": "zenmodeler",
+                "device": self.options.monitor,
+                "timeout": self.options.heartbeatTimeout,
+            }
             self.sendEvent(evt)
             self.niceDoggie(self.cycleTime())
 
@@ -848,23 +847,32 @@ class ZenModeler(PBDaemon):
                 if self.startat:
                     # This stuff relies on ARBITRARY_BEAT being < 60s
                     if self.timeMatches():
-                        # Run modeling in case we have now=False, startat is not None and local time matches the startat
+                        # Run modeling in case we have now=False, startat is
+                        # not None and local time matches the startat.
                         self.started = True
-                        self.log.info("Starting modeling...")
+                        self.log.info("Starting modeling")
                         reactor.callLater(1, self.main)
                 elif not self.isMainScheduled:
-                    # Or run modeling by cycleTime in case we have now=False, startat is None
-                    # and we haven't set schedule by cycleTime yet
+                    # Or run modeling by cycleTime in case we have now=False,
+                    # startat is None and we haven't set schedule by
+                    # cycleTime yet.
                     self.isMainScheduled = True
-                    reactor.callLater(self.cycleTime(), self.main)
+                    offset = self.cycleTime()
+                    reactor.callLater(offset, self.main)
+                    self.log.info(
+                        "Scheduled modeling to start in %s seconds", offset
+                    )
             else:
-                # Going back to the normal modeling schedule either cron or cycleTime
-                # after the first immediate modeling during service startup
+                # Going back to the normal modeling schedule either cron or
+                # cycleTime after the first immediate modeling during service
+                # startup.
                 self.immediate = 0
                 self.log.info(
-                    "Starting modeling in %s seconds.", self.startDelay
+                    "Starting modeling in %s seconds", self.startDelay
                 )
                 reactor.callLater(self.startDelay, self.main)
+        else:
+            self.log.info("modeling already started")
 
     def postStatisticsImpl(self):
         # save modeled device rate
@@ -1113,8 +1121,7 @@ class ZenModeler(PBDaemon):
             dest="writetries",
             default=2,
             type="int",
-            help="Number of times to try to write if a "
-            "read conflict is found",
+            help="Number of times to try to write if a read conflict is found",
         )
         # FIXME: cleanup --force option #2660
         self.parser.add_option(
@@ -1183,7 +1190,7 @@ class ZenModeler(PBDaemon):
             self.options.path = "/Devices"
         if self.options.ignorePlugins and self.options.collectPlugins:
             raise SystemExit(
-                "Only one of --ignore or --collect" " can be used at a time"
+                "Only one of --ignore or --collect can be used at a time"
             )
         if self.options.startat:
             cronmatch = re.match(

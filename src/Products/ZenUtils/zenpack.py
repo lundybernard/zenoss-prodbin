@@ -26,7 +26,6 @@ import time
 from cStringIO import StringIO
 from zipfile import ZipFile
 
-import Products
 import transaction
 
 from enum import Enum
@@ -61,7 +60,14 @@ from Products.Zuul import getFacade
 
 from .ZenPackInstallFilter import IZenPackInstallFilter
 from .ZenScriptBase import ZenScriptBase
-from .Utils import binPath, cleanupSkins, get_temp_dir, varPath, zenPath
+from .Utils import (
+    binPath,
+    cleanupSkins,
+    get_temp_dir,
+    prodbin_products,
+    varPath,
+    zenPath,
+)
 
 log = logging.getLogger("zen.zenpack")
 
@@ -109,7 +115,7 @@ def RemoveZenPack(
         except TypeError:
             zp.remove(dmd)
         dmd.ZenPackManager.packs._delObject(packName)
-    root = os.path.join(Products.__path__[-1], packName)
+    root = os.path.join(prodbin_products(), packName)
     if deleteFiles:
         if log:
             log.debug("Removing %s", root)
@@ -359,7 +365,7 @@ class ZenPackCmd(ZenScriptBase):
             # should be registered by the zenpack's __init__.py and the skin
             # should be registered by ZPLSkins loader.
             skinsSubdir = os.path.join(
-                Products.__path__[-1], packName, "skins", packName
+                prodbin_products(), packName, "skins", packName
             )
             if not os.path.exists(skinsSubdir):
                 os.makedirs(skinsSubdir, 0o750)
@@ -948,7 +954,7 @@ class ZenPackCmd(ZenScriptBase):
         packName = name.split("/")[0]
         self.log.debug('Extracting ZenPack "%s"', packName)
         for name in zf.namelist():
-            fullname = os.path.join(Products.__path__[-1], name)
+            fullname = os.path.join(prodbin_products(), name)
             self.log.debug("Extracting %s", name)
             if name.find("/.svn") > -1:
                 continue
@@ -980,20 +986,20 @@ class ZenPackCmd(ZenScriptBase):
 
         # Determine name of pack and it's destination directory
         packName = os.path.split(srcDir)[1]
-        root = os.path.join(Products.__path__[-1], packName)
+        root = os.path.join(prodbin_products(), packName)
 
         # Continue without copying if the srcDir is already in Products
         if os.path.exists(root) and os.path.samefile(root, srcDir):
             self.log.debug(
-                "Directory already in %s, not copying.", Products.__path__[-1]
+                "Directory already in %s, not copying.", prodbin_products()
             )
             return packName
 
         # Copy the source dir over to Products
         self.log.debug("Copying %s", packName)
-        result = os.system("cp -r %s %s" % (srcDir, Products.__path__[-1]))  # noqa: S605
+        result = os.system("cp -r %s %s" % (srcDir, prodbin_products()))  # noqa: S605
         if result == -1:
-            self.stop("Error copying %s to %s" % (srcDir, Products.__path__[-1]))
+            self.stop("Error copying %s to %s" % (srcDir, prodbin_products()))
 
         return packName
 
@@ -1015,19 +1021,19 @@ class ZenPackCmd(ZenScriptBase):
 
         # Determine name of pack and it's destination directory
         packName = os.path.split(srcDir)[1]
-        root = os.path.join(Products.__path__[-1], packName)
+        root = os.path.join(prodbin_products(), packName)
 
         # Continue without copying if the srcDir is already in Products
         if os.path.exists(root) and os.path.samefile(root, srcDir):
             self.log.debug(
-                "Directory already in %s, not copying.", Products.__path__[-1]
+                "Directory already in %s, not copying.", prodbin_products()
             )
             return packName
 
-        targetdir = os.path.join(Products.__path__[-1], packName)
+        targetdir = os.path.join(prodbin_products(), packName)
         cmd = "test -d %s && rm -rf %s" % (targetdir, targetdir)
         os.system(cmd)  # noqa: S605
-        cmd = "ln -s %s %s" % (srcDir, Products.__path__[-1])
+        cmd = "ln -s %s %s" % (srcDir, prodbin_products())
         os.system(cmd)  # noqa: S605
 
         return packName
@@ -1122,7 +1128,7 @@ class ZenPackCmd(ZenScriptBase):
             "--previousversion",
             dest="previousVersion",
             default=None,
-            help="Previous version of the zenpack;" " used during upgrades",
+            help="Previous version of the zenpack; used during upgrades",
         )
         self.parser.add_option(
             "--if-installed",

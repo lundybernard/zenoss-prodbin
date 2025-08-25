@@ -236,7 +236,7 @@ startswith() { case $2 in $1*) return 0;; *) return 1;; esac; }
 fix_prghome() {
 	if startswith "$ZENHOME/Products" "$PRGHOME"; then
 		PRODUCT_PATH=$(echo "$PRGHOME" | cut -d'/' -f4-)
-		PRGHOME=$(python -c "import os, Products; print os.path.join(os.path.dirname(Products.__path__[-1]), '$PRODUCT_PATH')")
+		PRGHOME=$(python -c "import os, Products; print os.path.join(os.path.dirname(next((p for p in Products.__path__ if 'prodbin' in p), Products.__path__[0])), '$PRODUCT_PATH')")
 	fi
 }
 

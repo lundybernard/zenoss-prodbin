@@ -140,9 +140,10 @@ class PBDaemon(ZenDaemon, pb.Referenceable):
 
         self.__eventqueue = None
         self.__eventclient = None
-        self.__recordQueuedEventsCountLoop = task.LoopingCall(
-            self.__record_queued_events_count
-        )
+        if self.options.enable_internal_metrics:
+            self.__recordQueuedEventsCountLoop = task.LoopingCall(
+                self.__record_queued_events_count
+            )
 
         if self.options.cycle:
             self.__server = _getLocalServer(self.options)
@@ -411,11 +412,12 @@ class PBDaemon(ZenDaemon, pb.Referenceable):
             self._setup_event_client()
 
             if self.options.cycle:
-                state = "stats"
-                self._start_statistics_task()
+                if self.options.enable_internal_metrics:
+                    state = "stats"
+                    self._start_statistics_task()
 
-                state = "metrics"
-                self._start_internal_metrics_task()
+                    state = "metrics"
+                    self._start_internal_metrics_task()
 
             reactor.addSystemEventTrigger("before", "shutdown", self._stop)
 
@@ -448,9 +450,10 @@ class PBDaemon(ZenDaemon, pb.Referenceable):
         )
         self.__eventclient.start()
         self.__eventclient.sendEvent(self.startEvent)
-        self.__recordQueuedEventsCountLoop.start(
-            self.options.writeStatistics, now=False
-        )
+        if self.options.enable_internal_metrics:
+            self.__recordQueuedEventsCountLoop.start(
+                self.options.writeStatistics, now=False
+            )
         self.log.info("started event client")
 
     def _start_internal_metrics_task(self):
@@ -646,8 +649,8 @@ class PBDaemon(ZenDaemon, pb.Referenceable):
             "--redis-url",
             dest="redisUrl",
             type="string",
-            default="redis://localhost:{default}/0".format(
-                default=publisher.defaultRedisPort
+            default="redis://localhost:{port}/0".format(
+                port=publisher.defaultRedisPort
             ),
             help="redis connection string: "
             "redis://[hostname]:[port]/[db]; default: %default",
@@ -672,6 +675,20 @@ class PBDaemon(ZenDaemon, pb.Referenceable):
             type="int",
             default=publisher.defaultMaxOutstandingMetrics,
             help="Max Number of metrics to allow in redis",
+        )
+
+        self.parser.add_option(
+            "--enable-internal-metrics",
+            dest="enable_internal_metrics",
+            default=True,
+            action="store_true",
+            help="Enable capture of the metrics of this service",
+        )
+        self.parser.add_option(
+            "--disable-internal-metrics",
+            dest="enable_internal_metrics",
+            action="store_false",
+            help="Disable capture of the metrics of this service",
         )
         self.parser.add_option(
             "--writeStatistics",
