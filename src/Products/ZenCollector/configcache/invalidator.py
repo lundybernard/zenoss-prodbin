@@ -48,7 +48,8 @@ from .utils import (
     RelStorageInvalidationPoller,
 )
 
-_default_interval = 30.0
+_default_interval = 30.0  # seconds
+_minimum_interval = 0.5  # seconds
 
 
 class Invalidator(object):
@@ -148,6 +149,7 @@ class Invalidator(object):
         )
         self.ctx.session.sync()  # ensure database connection
         while not self.ctx.controller.shutdown:
+            time_started = time.time()
             try:
                 invalidations = poller.poll()
                 self.ctx.session.sync()
@@ -163,7 +165,11 @@ class Invalidator(object):
                 self.ctx.metric_reporter.save()
                 # Call cacheGC to aggressively trim the ZODB cache
                 self.ctx.session.cacheGC()
-                self.ctx.controller.wait(self.interval)
+            time_spent = time.time() - time_started
+            # Pause the loop for at least the minimum duration
+            self.ctx.controller.wait(
+                max(self.interval - time_spent, _minimum_interval)
+            )
 
     def _synchronize(self):
         sync_deviceconfigs = Process(
