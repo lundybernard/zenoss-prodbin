@@ -202,7 +202,7 @@ class SnmpPerformanceCollectionTask(BaseTask):
 
         self._snmpProxy = None
         self._snmpConnInfo = self._device.snmpConnInfo
-        log.info("SNMP info summary  %s", self._snmpConnInfo.summary())
+        log.info("SNMP config summary  %s", self._snmpConnInfo.summary())
         self._oids = self._device.oids
         self._oidDeque = deque(self._oids.keys())
         self._good_oids = set()
@@ -287,8 +287,13 @@ class SnmpPerformanceCollectionTask(BaseTask):
         """
         Get performance data for all the monitored components on a device
         """
-        log.debug("Retrieving OIDs from %s [%s]", self._devId, self._manageIp)
+        log.debug("retrieving OIDs from %s [%s]", self._devId, self._manageIp)
         if not self._oids:
+            log.debug(
+                "no OIDs specified  device=%s manage-ip=%s",
+                self._devId,
+                self._manageIp,
+            )
             defer.returnValue(None)
 
         # Do known untested and good oids in chunks.
@@ -307,68 +312,80 @@ class SnmpPerformanceCollectionTask(BaseTask):
         maxTries = self.triesPerCycle
         try_count = 0
         consecutiveTimeouts = 0
-        while oids_to_test and try_count < maxTries:
-            try_count += 1
-            if try_count > 1:
-                log.debug(
-                    "%s [%s] some oids still uncollected after %s tries, "
-                    "trying again with chunk size %s",
-                    self._devId,
-                    self._manageIp,
-                    try_count - 1,
-                    chunk_size,
-                )
-            oid_chunks = self.chunk(oids_to_test, chunk_size)
-            for oid_chunk in oid_chunks:
-                try:
-                    self._checkTaskTime()
+        try:
+            while oids_to_test and try_count < maxTries:
+                try_count += 1
+                if try_count > 1:
                     log.debug(
-                        "Fetching OID chunk size %s from %s [%s] - %s",
+                        "%s [%s] some oids still uncollected after %s tries, "
+                        "trying again with chunk size %s",
+                        self._devId,
+                        self._manageIp,
+                        try_count - 1,
                         chunk_size,
-                        self._devId,
-                        self._manageIp,
-                        oid_chunk,
                     )
-                    yield self._fetchPerfChunk(oid_chunk)
-                    consecutiveTimeouts = 0
-                    log.debug(
-                        "Finished fetchPerfChunk call %s [%s]",
-                        self._devId,
-                        self._manageIp,
-                    )
-                except error.TimeoutError:
-                    log.debug(
-                        "timeout for %s [%s] oids - %s",
-                        self._devId,
-                        self._manageIp,
-                        oid_chunk,
-                    )
-                    consecutiveTimeouts += 1
-                    if consecutiveTimeouts >= self._maxTimeouts:
+                oid_chunks = self.chunk(oids_to_test, chunk_size)
+                for oid_chunk in oid_chunks:
+                    had_timeout = True
+                    try:
+                        self._checkTaskTime()
+                        log.info(
+                            "fetching %s OIDs from %s [%s] - %s",
+                            chunk_size,
+                            self._devId,
+                            self._manageIp,
+                            oid_chunk,
+                        )
+                        yield self._fetchPerfChunk(oid_chunk)
+                        consecutiveTimeouts = 0
+                        had_timeout = False
+                    except error.TimeoutError:
                         log.debug(
-                            "%s consecutive timeouts, "
-                            "abandoning run for %s [%s]",
-                            consecutiveTimeouts,
+                            "timeout for %s [%s] oids - %s",
+                            self._devId,
+                            self._manageIp,
+                            oid_chunk,
+                        )
+                        consecutiveTimeouts += 1
+                        if consecutiveTimeouts >= self._maxTimeouts:
+                            log.debug(
+                                "%s consecutive timeouts, "
+                                "abandoning run for %s [%s]",
+                                consecutiveTimeouts,
+                                self._devId,
+                                self._manageIp,
+                            )
+                            raise
+                    except SnmpTimeoutError:
+                        # Only seem to get these for V3 and subsequent calls
+                        # throw credential exceptions, so just bail here.
+                        log.debug(
+                            "SnmpTimeoutError for %s [%s] oids - %s",
+                            self._devId,
+                            self._manageIp,
+                            oid_chunk,
+                        )
+                        raise
+                    finally:
+                        log.info(
+                            "%s %s OIDs from %s [%s]",
+                            "timed out trying to fetch"
+                            if had_timeout
+                            else "fetched",
+                            chunk_size,
                             self._devId,
                             self._manageIp,
                         )
-                        raise
-                except SnmpTimeoutError:
-                    # Only seem to get these for V3 and subsequent calls
-                    # throw credential exceptions, so just bail here.
-                    log.debug(
-                        "SnmpTimeoutError for %s [%s] oids - %s",
-                        self._devId,
-                        self._manageIp,
-                        oid_chunk,
-                    )
-                    raise
-            # Can still have untested oids from a chunk that failed to return
-            # data, one or more of those may be bad.  Run with a smaller
-            # chunk size to identify bad oid. Can also have uncollected good
-            # oids because of timeouts.
-            oids_to_test = list(self._uncollectedOids())
-            chunk_size = 1
+                # Can still have untested oids from a chunk that failed to
+                # return data, one or more of those may be bad.  Run with a
+                # smaller chunk size to identify bad oid. Can also have
+                # uncollected good oids because of timeouts.
+                oids_to_test = list(self._uncollectedOids())
+                chunk_size = 1
+        finally:
+            log.info(
+                "retrieved OIDs from %s [%s]", self._devId, self._manageIp
+            )
 
     @defer.inlineCallbacks
     def _fetchPerfChunk(self, oid_chunk):
@@ -424,7 +441,7 @@ class SnmpPerformanceCollectionTask(BaseTask):
                 for oid, value in update.items():
                     if oid not in self._oids:
                         log.error(
-                            "SNMP get returned unexpected OID: %s %s",
+                            "unexpected OID  config-id=%s oid=%s",
                             self.configId,
                             oid,
                         )
@@ -434,6 +451,11 @@ class SnmpPerformanceCollectionTask(BaseTask):
                     if value == "" or value is None:
                         if oid not in self._bad_oids:
                             self._mark_bad_oids([oid])
+                        log.debug(
+                            "useless value for OID  config-id=%s oid=%s",
+                            self.configId,
+                            oid,
+                        )
                         continue
 
                     self._good_oids.add(oid)
@@ -477,8 +499,7 @@ class SnmpPerformanceCollectionTask(BaseTask):
                         path = metadata.get("contextKey")
                         if self._chosenOid:
                             log.info(
-                                "OID: %s >> Component: %s >> "
-                                "DataPoint: %s %s",
+                                "OID: %s >> Component: %s >> DataPoint: %s %s",
                                 oid,
                                 path,
                                 metric,
@@ -495,6 +516,11 @@ class SnmpPerformanceCollectionTask(BaseTask):
                                 max=rrdMax,
                                 metadata=metadata,
                                 extraTags=tags,
+                            )
+                            log.debug(
+                                "pushed metric  config-id=%s metric=%s",
+                                self.configId,
+                                metric,
                             )
                         except Exception as e:
                             log.exception(

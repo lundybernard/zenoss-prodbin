@@ -35,15 +35,15 @@ from zope.traversing.adapters import DefaultTraversable
 from Zope2.App import zcml
 
 from .config import ConfigLoader
+from .GlobalConfig import (
+    _convertConfigLinesToArguments,
+    getGlobalConfiguration,
+)
 from .Utils import (
     getAllParserOptionsGen,
     load_config_override,
     unused,
     zenPath,
-)
-from .GlobalConfig import (
-    _convertConfigLinesToArguments,
-    getGlobalConfiguration,
 )
 
 

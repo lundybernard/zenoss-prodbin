@@ -1182,7 +1182,7 @@ def zenPath(*args):
     if args and "Products" in args[0]:
         import Products
 
-        rootpath = os.path.dirname(Products.__path__[-1])
+        rootpath = os.path.dirname(prodbin_products())
 
     return sane_pathjoin(rootpath, *args)
 
@@ -1241,6 +1241,20 @@ def binPath(fileName):
         if os.path.isfile(path):
             return path
     return ""
+
+
+_prodbin_products_path = None
+
+def prodbin_products():
+    import Products
+
+    global _prodbin_products_path
+    if _prodbin_products_path is None:
+        _prodbin_products_path = next(
+            (p for p in Products.__path__ if "zenoss-prodbin" in p),
+            Products.__path__[0],
+        )
+    return _prodbin_products_path
 
 
 def extractPostContent(REQUEST):
