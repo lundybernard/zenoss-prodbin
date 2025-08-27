@@ -10,10 +10,10 @@
 from __future__ import print_function
 
 import logging
+import time
 
 from collections import Counter, defaultdict
 from datetime import datetime
-from time import time
 
 import attr
 
@@ -179,7 +179,7 @@ class Manager(object):
         )
         # Test against a time 10 minutes earlier to minimize interfering
         # with builder working on the same config.
-        now = time() - 600
+        now = time.time() - 600
         for status in self.stores.device.get_building():
             uid = self.stores.device.get_uid(status.key.device)
             limit = buildlimitmap.get(uid)
@@ -197,7 +197,7 @@ class Manager(object):
         if not isinstance(status, ConfigStatus.Building):
             return None
         limit = OidMapProperties().build_timeout
-        now = time() - 600
+        now = time.time() - 600
         if status.started < (now - limit):
             return (
                 status,
@@ -211,7 +211,7 @@ class Manager(object):
         pendinglimitmap = DevicePropertyMap.make_pending_timeout_map(
             self.ctx.dmd.Devices
         )
-        now = time()
+        now = time.time()
         for status in self.stores.device.get_pending():
             uid = self.stores.device.get_uid(status.key.device)
             limit = pendinglimitmap.get(uid)
@@ -229,7 +229,7 @@ class Manager(object):
         if not isinstance(status, ConfigStatus.Pending):
             return None
         limit = OidMapProperties().pending_timeout
-        now = time()
+        now = time.time()
         if status.submitted < (now - limit):
             return (
                 status,
@@ -240,7 +240,7 @@ class Manager(object):
             )
 
     def _expire_device_configs(self, data, kind):
-        now = time()
+        now = time.time()
         self.stores.device.set_expired(
             *((status.key, now) for status, _, _, _, _ in data)
         )
@@ -259,7 +259,7 @@ class Manager(object):
             )
 
     def _expire_oidmap_config(self, data, kind):
-        now = time()
+        now = time.time()
         self.stores.oidmap.set_expired(now)
         status, valId, val, limitId, limitValue = data
         self.log.info(
@@ -282,7 +282,7 @@ class Manager(object):
             self.ctx.dmd.Devices
         )
         ttl_map = DevicePropertyMap.make_ttl_map(self.ctx.dmd.Devices)
-        now = time()
+        now = time.time()
 
         ready_to_rebuild = []
 
@@ -329,7 +329,7 @@ class Manager(object):
         for status in statuses:
             uid = self.stores.device.get_uid(status.key.device)
             timeout = buildlimitmap.get(uid)
-            now = time()
+            now = time.time()
             self.stores.device.set_pending((status.key, now))
             try:
                 self.dispatchers.device.dispatch(
@@ -386,7 +386,7 @@ class Manager(object):
     def _maybe_rebuild_oidmap_config(self):
         props = OidMapProperties()
         status = self.stores.oidmap.get_status()
-        now = time()
+        now = time.time()
         if isinstance(status, ConfigStatus.Current):
             if now < (status.updated + props.ttl):
                 return  # oidmap not old enough for rebuild
@@ -431,7 +431,7 @@ class _MetricCollector(PeriodicTask):
     def _collect(self):
         counts = Counter()
         ages = defaultdict(list)
-        now = time()
+        now = time.time()
         for status in self._store.query_statuses():
             key, ts = attr.astuple(status)
             ages[type(status)].append(int(now - ts))
