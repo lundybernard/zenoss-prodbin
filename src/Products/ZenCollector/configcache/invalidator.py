@@ -157,10 +157,8 @@ class Invalidator(object):
                 self._metrics.received.mark(len(invalidations))
                 self._metrics.processed.update(len(invalidations))
 
-                if not invalidations:
-                    continue
-
-                self._process_invalidations(invalidations)
+                if invalidations:
+                    self._process_invalidations(invalidations)
             finally:
                 self.ctx.metric_reporter.save()
                 # Call cacheGC to aggressively trim the ZODB cache
