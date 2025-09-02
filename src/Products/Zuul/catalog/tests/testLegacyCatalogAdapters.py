@@ -18,6 +18,9 @@ from Products.ZenTestCase.BaseTestCase import BaseTestCase
 from Products.ZenUtils.IpUtil import ipToDecimal
 from Products.Zuul.catalog.legacy import LegacyCatalogAdapter
 
+from mock import patch
+from . import SEARCH_MODEL_CATALOG_PATH, wrapped_search_model_catalog
+
 DEVICE_CLASS = "my_device_class_{}"
 LOCATION = "location_{}"
 DEVICE = "my_device_{}"
@@ -69,7 +72,8 @@ class TestLegacyCatalogAdapters(BaseTestCase):
             dev.interface = iface
             self.devices[dev_id] = dev
 
-    def test_legacy_catalogs(self):
+    @patch(SEARCH_MODEL_CATALOG_PATH, autospec=True, side_effect=wrapped_search_model_catalog)
+    def test_legacy_catalogs(self, mock_search_model_catalog):
         self.validate_global_catalog()
         self.validate_device_catalog()
         self.validate_layer2_catalog()
