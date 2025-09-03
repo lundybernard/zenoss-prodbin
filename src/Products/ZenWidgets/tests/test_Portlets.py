@@ -12,6 +12,9 @@ import json
 from Products import Zuul
 from Products.ZenTestCase.BaseTestCase import BaseTestCase
 from Products.ZenWidgets.browser.Portlets import ProductionStatePortletView
+from mock import patch
+
+from . import SEARCH_MODEL_CATALOG_PATH, wrapped_search_model_catalog
 
 
 class TestPortlets(BaseTestCase):
@@ -19,7 +22,8 @@ class TestPortlets(BaseTestCase):
         super(TestPortlets, self).afterSetUp()
         self.facade = Zuul.getFacade("device", self.dmd)
 
-    def test_ProductionStatePortletView(self):
+    @patch(SEARCH_MODEL_CATALOG_PATH, autospec=True, side_effect=wrapped_search_model_catalog)
+    def test_ProductionStatePortletView(self, mock_search_model_catalog):
         # Create some devices
         devices = self.dmd.Devices
         test_device_maintenance = devices.createInstance(
