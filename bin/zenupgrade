@@ -1,0 +1,61 @@
+#!/bin/bash
+
+ZENHOME=/opt/zenoss
+SITEPACKAGES=$ZENHOME/lib/python2.7/site-packages
+
+# Fixup LDAPAuthenticator ZenPack dependencies
+for pkgname in LDAPMultiPlugins LDAPUserFolder MemcachedManager; do
+	if [ -d $ZENHOME/Products/${pkgname} ]; then
+		mv $ZENHOME/Products/${pkgname} $SITEPACKAGES/Products/
+	fi
+done
+
+# Remove $ZENHOME/Products and the dev-mode Zenoss package files
+if [ -d $ZENHOME/Products ]; then
+	rm -rf $ZENHOME/Products $ZENHOME/Zenoss.egg-info $SITEPACKAGES/Zenoss-nspkg.pth
+	echo Removed prior dev-mode 'Zenoss' package artifacts
+else
+	echo Old 'Zenoss' package artifacts already removed
+fi
+
+MARIADB_HC=$ZENHOME/bin/healthchecks/mariadb_answering
+MYSQLMETRICS=$ZENHOME/bin/metrics/mysqlmetrics.sh
+
+for script in $MARIADB_HC $MYSQLMETRICS; do
+	if [ -f $script ]; then
+		if grep -q "/opt/zenoss/Products" $script; then
+			sed -i -e 's/Products\/ZenUtils\/ZenDB.py/bin\/zendb/' $script
+			echo Fixed $script
+		else
+			echo No fix needed for $script
+		fi
+	else
+		echo warning: script not found: $script
+	fi
+done
+
+MARIADB_ANSWERING_PATCH=$(python - << EOF
+import importlib_metadata as md
+import os.path
+d = md.distribution("zenoss")
+f = next((f for f in d.files if f.name == "mariadb_answering.diff"), None)
+fullpath = f.locate()
+print fullpath if fullpath.exists() else ""
+EOF
+)
+
+# Patch the mariadb_answering script to use the mysql client.
+if [ -f $MARIADB_HC ]; then
+	if [ -f "$MARIADB_ANSWERING_PATCH" ]; then
+		pushd /opt/zenoss >/dev/null
+		patch --dry-run -p3 --forward -i $MARIADB_ANSWERING_PATCH
+		if [ $? -eq 0 ]; then
+			patch -p3 --forward -i $MARIADB_ANSWERING_PATCH
+		fi
+		popd >/dev/null
+	else
+		echo warning: mariadb_answering patch file not found
+	fi
+else
+	echo warning: script not found: $MARIADB_HC
+fi
