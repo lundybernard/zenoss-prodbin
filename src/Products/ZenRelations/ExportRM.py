@@ -70,7 +70,6 @@ class ExportRM(ZCmdBase):
         version = ZenossInfo("").getZenossVersion()
         return "[%s, version %s]" % (version.name, version.short())
 
-
     def getServerName(self):
         """
         Gather our Zenoss server name

@@ -1,4 +1,4 @@
-BRANCH_NAME = $(shell git name-rev --name-only HEAD)
+BRANCH_NAME = $(shell git symbolic-ref --short HEAD)
 UPSTREAM = $(shell git config --get branch.$(BRANCH_NAME).merge)
 ifeq ($(UPSTREAM),)
 BRANCH ?= $(BRANCH_NAME)
@@ -19,6 +19,7 @@ endif
 
 REV_SUFFIX = $(or\
 	$(if $(findstring master,$(BRANCH)),""),\
+	$(if $(findstring master-6.x,$(BRANCH)),""),\
 	$(if $(findstring develop,$(BRANCH)),.dev$(COUNT)),\
 	$(if $(findstring support/6.x,$(BRANCH)),.dev$(COUNT)),\
 	$(if $(findstring release/,$(BRANCH)),rc$(COUNT)),\
