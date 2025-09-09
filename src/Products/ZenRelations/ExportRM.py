@@ -67,8 +67,9 @@ class ExportRM(ZCmdBase):
         """
         from Products.ZenModel.ZenossInfo import ZenossInfo
 
-        zinfo = ZenossInfo("")
-        return str(zinfo.getZenossVersion())
+        version = ZenossInfo("").getZenossVersion()
+        return "[%s, version %s]" % (version.name, version.short())
+
 
     def getServerName(self):
         """
