@@ -161,6 +161,7 @@ class ZenossInfo(ZenModelItem, SimpleItem):
 
         version_str = metadata.version("zenoss")
         version = pkg_resources.parse_version(version_str)
+        rev = 0
         if version.base_version != version.public:
             debased_version = version.public[len(version.base_version) :]
             rev = debased_version.split(".")[-1].translate(
