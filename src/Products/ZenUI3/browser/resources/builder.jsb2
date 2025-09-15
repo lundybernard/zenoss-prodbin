@@ -261,6 +261,9 @@
         },{
             "text": "joblogdialog.js",
             "path": "js/zenoss/"
+        },{
+            "text": "virtana.js",
+            "path": "js/zenoss/"
         }]
     }],
     "resources": []
