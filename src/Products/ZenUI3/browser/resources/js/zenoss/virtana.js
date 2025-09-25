@@ -2,8 +2,12 @@
 // second "onReady" block should be runned after header and page is rendered
 Ext.onReady(function() {
     function parseBoolean(v, defaultValue) {
-        if (v === undefined) return defaultValue;
-        if (v === null) return true;
+        if (v === undefined) {
+            return defaultValue;
+        }
+        if (v === null) {
+            return true;
+        }
         switch(v.toLowerCase()) {
         case "false":
         case "no":
@@ -22,7 +26,9 @@ Ext.onReady(function() {
 });
 
 Ext.onReady(function() {
-    if (!localStorage.getItem('virtana')) return;
+    if (!localStorage.getItem('virtana')) {
+        return;
+    }
     document.querySelector("html").classList.remove("z-cse-dark");
     var headerNavigations = ['search'];
     Ext.Array.each(document.querySelector('#header').querySelectorAll('a'), function(item) {
@@ -193,10 +199,12 @@ Ext.onReady(function() {
     }];
     var navigationButtons = [];
     Ext.Array.each(navigation, function(navi) {
-        var hidden = !Ext.Array.some(headerNavigations, function (n) {
+        var hidden = !Ext.Array.some(headerNavigations, function(n) {
             return n.endsWith(navi.name);
         });
-        if (hidden) return;
+        if (hidden) {
+            return;
+        }
         navigationButtons.push({
             xtype: 'button',
             text: navi.text,
@@ -247,16 +255,26 @@ Ext.onReady(function() {
         helpCmp = document.querySelector('#help-icon-container a');
     Ext.get(document.querySelector('#header')).setStyle({ display: "none" });
     Ext.getCmp('viewport').remove(Ext.getCmp('header_panel'));
+    var getCurrentNavi = function(items) {
+        var navi = '';
+        Ext.Array.each(items, function(item) {
+            if (item.href === location.pathname)  {
+                navi = item.text;
+            }
+            if (item.items) {
+                navi = getCurrentNavi(item.items);
+            }
+            return !navi;
+        });
+        return navi;
+    };
+    var currentNavigation = getCurrentNavi(navigation);
     Ext.getCmp('viewport').add([{
         xtype: 'toolbar',
         region: 'north',
         height: 60,
         weight: 40,
         id: 'header_panel',
-        // layout: {
-        //     type: 'hbox',
-        //     align: 'middle'
-        // },
         style: {
             'background-color': '#031c60',
             'background-image': 'none',
@@ -274,7 +292,7 @@ Ext.onReady(function() {
             height: "100%",
             margin: "0 10",
             style: {
-                opacity: .2
+                opacity: 0.2
             }
         },{
             xtype: 'label',
@@ -282,14 +300,7 @@ Ext.onReady(function() {
                 'font-size': '16px',
                 color: 'white'
             },
-            text: navigation.reduce((acc, n) => {
-                if (n.href === location.pathname)  {
-                    return n.text;
-                }
-                var items = n.items || [],
-                    item = items.find(ni => ni.href === location.pathname);
-                return item ? item.text : acc;
-            }, "")
+            text: currentNavigation
         },{
             xtype: 'tbspacer',
             flex: 1
@@ -335,8 +346,7 @@ Ext.onReady(function() {
                         // IE only supports these window names: _blank _media _parent _search _self _top
                         var windowname = Ext.isIE ? '_blank' : url;
                         if (record.get('popout')) {
-                            window.open(Ext.String.format('{0}', url),
-                                windowname, 'status=1,width=600,height=500');
+                            window.open(Ext.String.format('{0}', url), windowname, 'status=1,width=600,height=500');
                         }
                         else {
                             window.location = Ext.String.format('{0}', url);
