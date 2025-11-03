@@ -9,9 +9,13 @@
 
 from __future__ import absolute_import, print_function
 
+import importlib
+import inspect
 import os
 import sys
 import types
+
+import importlib_metadata as metadata
 
 from IPython.lib import pretty
 from twisted.spread.jelly import unjellyableRegistry
@@ -126,24 +130,27 @@ class ShowDevice(object):
             device=self._device,
         )
         if results:
-            for cls in set(unjellyableRegistry.values()):
-                if isinstance(
-                    cls, (types.ClassType, types.TypeType)
-                ) and issubclass(cls, (pb.Copyable, pb.RemoteCopy)):
-                    pretty.for_type(cls, _pp_hide_passwords)
-                else:
-                    pretty.for_type(cls, _pp_default)
-            try:
-                pretty.pprint(
-                    results.config, max_width=self._columns, max_seq_length=0
-                )
-            except IOError as ex:
-                if ex.errno != 32:  # broken pipe
-                    print(ex, file=sys.stderr)
-            except KeyboardInterrupt as ex:
-                print(ex, file=sys.stderr)
+            pretty_print_device_config(results.config, self._columns)
         else:
             print(err, file=sys.stderr)
+
+
+def pretty_print_device_config(config, columns):
+    _register_zenpack_device_config_classes()
+    for item in set(unjellyableRegistry.values()):
+        if isinstance(item, (types.ClassType, type)) and issubclass(
+            item, (pb.Copyable, pb.RemoteCopy)
+        ):
+            pretty.for_type(item, _pp_hide_passwords)
+        else:
+            pretty.for_type(item, _pp_default)
+    try:
+        pretty.pprint(config, max_width=columns, max_seq_length=0)
+    except IOError as ex:
+        if ex.errno != 32:  # broken pipe
+            print(ex, file=sys.stderr)
+    except KeyboardInterrupt as ex:
+        print(ex, file=sys.stderr)
 
 
 def _query_cache(store, service, monitor, device):
@@ -192,3 +199,34 @@ def _printer(obj, p, cycle, vprint):
 
 def _is_output_redirected():
     return os.fstat(0) != os.fstat(1)
+
+
+def _register_zenpack_device_config_classes():
+    """
+    Register all unregistered pb.Copyable and pb.RemoteCopy classes.
+    """
+    service_modules = _identify_zenpack_hub_service_modules()
+    for name, svcmod in service_modules.iteritems():
+        for clsname, cls in inspect.getmembers(svcmod, inspect.isclass):
+            if not issubclass(cls, (pb.Copyable, pb.RemoteCopy)):
+                continue
+            fullname = "{}.{}".format(name, clsname)
+            if fullname not in unjellyableRegistry:
+                pb.setUnjellyableForClass(cls, cls)
+
+
+def _identify_zenpack_hub_service_modules():
+    service_modules = {}
+    for ep in metadata.entry_points().get("zenoss.zenpacks", ()):
+        paths = (
+            p
+            for p in metadata.files(ep.name)
+            if "/services/" in p.as_posix()
+            and p.suffix == ".py"
+            and p.stem != "__init__"
+        )
+        for path in paths:
+            svcmod = "{}.services.{}".format(ep.module, path.stem)
+            svcm = importlib.import_module(svcmod)
+            service_modules[svcm.__name__] = svcm
+    return service_modules
