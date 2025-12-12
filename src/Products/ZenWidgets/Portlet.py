@@ -22,7 +22,7 @@ from Products.ZenUtils.Utils import zenPath
 log = logging.getLogger("zen.Portlet")
 
 
-def manage_addPortlet(self, context, REQUEST=None):
+def manage_addPortlet(ctx, context, REQUEST=None):
     """Add a portlet."""
 
 
