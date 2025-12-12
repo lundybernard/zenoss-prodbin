@@ -50,14 +50,19 @@ class CollectorInfo(BrowserView):
         collectors = []
         collectorDaemons = []
 
-        for hub in self.context.dmd.Monitors.Hub.objectValues(spec='HubConf'):
-            hubService = appfacade.queryHubDaemons(hub.id)[0]
-            zenHubs.append(dict(id='hub_{}'.format(hub.id),
-                                title=hub.id,
-                                controlplaneServiceId=hubService.id,
-                                lastModeledState=str(hubService.state).lower(),
-                                RAMCommitment=getattr(hubService, 'RAMCommitment', None),
-                                instanceCount=hubService.instances))
+        for hub in self.context.dmd.Monitors.Hub.objectValues(spec="HubConf"):
+            # Filter out the main ZenHub service
+            hubService = filter(lambda svc: svc.name.lower() == "zenhub", appfacade.queryHubDaemons(hub.id))[0]
+            zenHubs.append(
+                dict(
+                    id="hub_{}".format(hub.id),
+                    title=hub.id,
+                    controlplaneServiceId=hubService.id,
+                    lastModeledState=str(hubService.state).lower(),
+                    RAMCommitment=getattr(hubService, "RAMCommitment", None),
+                    instanceCount=hubService.instances,
+                )
+            )
 
             for collector in hub.collectors():
                 collectors.append(dict(id='collector_{}'.format(collector.id),
