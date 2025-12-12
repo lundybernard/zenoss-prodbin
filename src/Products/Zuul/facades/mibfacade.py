@@ -169,7 +169,7 @@ class MibFacade(TreeFacade):
     @info
     def addMibPackage(self, package, organizer):
         args = [binPath('zenmib'), 'run', package,
-                '--path=%s' % organizer]
+                '--path=%s' % organizer, "--inMainProcess"]
         jobStatus = self._dmd.JobManager.addJob(
             SubprocessJob,
             description="Add MIB package %s" % package,
