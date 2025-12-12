@@ -321,11 +321,11 @@ class MultiPathIndex(ExtendedPathIndex):
 
 manage_addMultiPathIndexForm = DTMLFile('dtml/addMultiPathIndex', globals())
 
-def manage_addMultiPathIndex(self, id, REQUEST=None, RESPONSE=None,
+def manage_addMultiPathIndex(ctx, id, REQUEST=None, RESPONSE=None,
                              URL3=None):
     """
     Add a MultiPathIndex.
     """
-    return self.manage_addIndex(id, 'MultiPathIndex', extra=None,
+    return ctx.manage_addIndex(id, 'MultiPathIndex', extra=None,
                                 REQUEST=REQUEST, RESPONSE=RESPONSE,
                                 URL1=URL3)

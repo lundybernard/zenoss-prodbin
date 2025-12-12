@@ -399,7 +399,7 @@ class ExtendedPathIndex(PathIndex):
 
 manage_addExtendedPathIndexForm = DTMLFile('dtml/addExtendedPathIndex', globals())
 
-def manage_addExtendedPathIndex(self, id, extra=None, REQUEST=None, RESPONSE=None, URL3=None):
+def manage_addExtendedPathIndex(context, id, extra=None, REQUEST=None, RESPONSE=None, URL3=None):
     """Add an extended path index"""
-    return self.manage_addIndex(id, 'ExtendedPathIndex', extra=extra,
+    return context.manage_addIndex(id, 'ExtendedPathIndex', extra=extra,
                 REQUEST=REQUEST, RESPONSE=RESPONSE, URL1=URL3)
