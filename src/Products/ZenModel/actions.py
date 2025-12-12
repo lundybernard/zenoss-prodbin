@@ -398,17 +398,21 @@ class EmailAction(IActionBase, TargetableAction):
             plain_body = MIMEText(body.decode('ascii', 'ignore'))
         return plain_body
 
-    def _targetsByTz(self, notification, signal, targets):
+    def _targetsByTz(self, notification, targets):
         """
         Take timezone from user property to convert a event time in
         notification and also group targets emails by those timezones.
         """
         tz_targets = {}
         targetsCopy = set(targets)
-        for recipient in self._get_recipients_from_signal(notification, signal):
-            if recipient.email in targets:
-                tz_targets.setdefault(recipient.timezone, set()).add(recipient.email)
-                targetsCopy.discard(recipient.email)
+        for recipient in notification.recipients:
+            if recipient['type'] in ['group', 'user']:
+                guid = recipient['value']
+                target_obj = self.guidManager.getObject(guid)
+                if target_obj:
+                    if target_obj.email in targets and target_obj.timezone:
+                        tz_targets.setdefault(target_obj.timezone, set()).add(target_obj.email)
+                        targetsCopy.discard(target_obj.email)
         if targetsCopy: #some emails are not from users in the system
             tz = time.tzname[time.daylight] # get current timezone factoring in daylight saving
             tz_targets.setdefault(tz, set()).update(targetsCopy)
@@ -425,7 +429,7 @@ class EmailAction(IActionBase, TargetableAction):
     def executeBatch(self, notification, signal, targets):
         log.debug("Executing %s action for targets: %s", self.name, targets)
         self.setupAction(notification.dmd)
-        tz_targets = self._targetsByTz(notification, signal, targets)
+        tz_targets = self._targetsByTz(notification, targets)
         original_lst = signal.event.last_seen_time
         original_fst = signal.event.first_seen_time
         original_sct = signal.event.status_change_time
