@@ -51,17 +51,17 @@ def skinDirs(base):
     return layers
 
 
-def registerSkin(self, base, positionAfter='custom'):
+def registerSkin(ctx, base, positionAfter='custom'):
     """setup the skins in a product"""
     layers = skinDirs(base)
     try:
         from Products.CMFCore.utils import getToolByName
         from Products.CMFCore.DirectoryView import addDirectoryViews
-        skinstool = getToolByName(self, 'portal_skins')
+        skinstool = getToolByName(ctx, 'portal_skins')
         for layer in layers:
             if layer not in skinstool.objectIds():
                 path = os.path.join(base, 'skins')
-                if not os.path.exists(path): os.mkdir(path, mode=0755)
+                if not os.path.exists(path): os.mkdir(path, mode=0o755)
                 root = findZenPackRoot(path).split('/')[-1]
                 addDirectoryViews(skinstool, path, dict(__name__=root))
         skins = skinstool.getSkinSelections()
@@ -83,7 +83,7 @@ def registerSkin(self, base, positionAfter='custom'):
         if "portal_skin" in e.args: pass
         else: raise
 
-def unregisterSkin(self, base, positionAfter='custom'):
+def unregisterSkin(ctx, base, positionAfter='custom'):
     """setup the skins in a product"""
     from Products.ZenUtils.Utils import unused
     unused(positionAfter)
@@ -91,7 +91,7 @@ def unregisterSkin(self, base, positionAfter='custom'):
     if layers is None: return
     try:
         from Products.CMFCore.utils import getToolByName
-        skinstool = getToolByName(self, 'portal_skins')
+        skinstool = getToolByName(ctx, 'portal_skins')
         for layer in layers:
             if layer in skinstool.objectIds():
                 try:
