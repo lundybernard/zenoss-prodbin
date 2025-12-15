@@ -92,7 +92,7 @@ class DataRoot(ZenModelRM, OrderedFolder, Commandable, ZenMenuable):
     reportMetricsOptIn = True
     acceptedTerms = True
     cz_prefix = getUtility(IVirtualRoot).get_prefix()
-    instanceIdentifier = 'Zenoss - %s' % cz_prefix.replace('/', '')
+    instanceIdentifier = 'Virtana - %s' % cz_prefix.replace('/', '')
     zenossHostname = 'localhost:8080'
     smtpHost = ''
     pageCommand = ''
