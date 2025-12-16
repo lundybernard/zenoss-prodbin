@@ -16,6 +16,8 @@ from collections import deque
 from cookielib import CookieJar
 from httplib import UNAUTHORIZED
 
+import six
+
 from twisted.internet import defer, protocol, reactor
 from twisted.web.client import Agent, CookieAgent
 from twisted.web.http_headers import Headers
@@ -123,7 +125,7 @@ class BasePublisher(object):
             )
 
         mv = self.build_metric(metric, value, timestamp, tags)
-        log.debug("writing: %s", mv)
+        log.debug("buffering: %s", mv)
 
         self._mq.append(mv)
 
@@ -164,6 +166,12 @@ class RedisListPublisher(BasePublisher):
         self._flushing = False
         self._connection = reactor.connectTCP(
             self._host, self._port, self._redis
+        )
+        log.debug(
+            "redis connection  host=%s port=%s connection=%s",
+            self._host,
+            self._port,
+            self._connection,
         )
         reactor.addSystemEventTrigger("before", "shutdown", self._shutdown)
 
@@ -224,59 +232,60 @@ class RedisListPublisher(BasePublisher):
             log.debug("metric flush to redis in progress, skipping _put")
             return defer.succeed(len(self._mq))
 
-        if self._connection.state == "connected":
-            log.debug("trying to publish %d metrics", len(self._mq))
+        if self._connection.state != "connected":
+            return defer.fail()
 
-            metrics = []
-            for x in xrange(self._get_batch_size()):
-                if not self._mq:
-                    break
-                metrics.append(self._mq.popleft())
-            if not metrics:
-                return defer.succeed(None)
+        log.debug("trying to publish %d metrics", len(self._mq))
 
-            @defer.inlineCallbacks
-            def _flush(metrics):
-                if self._flushing:
-                    # this should never really happen, but here as a safety
-                    log.debug("rescheduling _flush")
-                    num = yield reactor.deferLater(0.25, _flush, metrics)
-                    defer.returnValue(num)
-                log.debug(
-                    "flushing %s metrics, current batch size %s",
-                    len(metrics),
-                    self._batch_size,
+        batch_size = self._get_batch_size()
+        metrics = [
+            self._mq.popleft() for _ in six.moves.range(batch_size) if self._mq
+        ]
+        if not metrics:
+            return defer.succeed(None)
+
+        @defer.inlineCallbacks
+        def _flush(metrics, batch_size):
+            if self._flushing:
+                # this should never really happen, but here as a safety
+                log.debug("rescheduling _flush")
+                num = yield reactor.deferLater(0.25, _flush, metrics)
+                defer.returnValue(num)
+            log.debug(
+                "flushing %s metrics, current batch size %s",
+                len(metrics),
+                batch_size,
+            )
+            client = self._redis.client
+            try:
+                self._flushing = True
+                yield client.multi()
+                yield client.lpush(self._channel, *metrics)
+                yield client.ltrim(
+                    self._channel, 0, self._maxOutstandingMetrics - 1
                 )
-                client = self._redis.client
+                result, _ = yield client.execute()
+                yield self._metrics_published(
+                    result,
+                    metricCount=len(metrics),
+                    remaining=len(self._mq),
+                )
+                defer.returnValue(len(self._mq))
+            except Exception as e:
+                # since we may be in a mutli redis command state,
+                # attempt to discard it
                 try:
-                    self._flushing = True
-                    yield client.multi()
-                    yield client.lpush(self._channel, *metrics)
-                    yield client.ltrim(
-                        self._channel, 0, self._maxOutstandingMetrics - 1
-                    )
-                    result, _ = yield client.execute()
-                    yield self._metrics_published(
-                        result,
-                        metricCount=len(metrics),
-                        remaining=len(self._mq),
-                    )
-                    defer.returnValue(len(self._mq))
-                except Exception as e:
-                    # since we may be in a mutli redis command state,
-                    # attempt to discard it
-                    try:
-                        yield client.discard()
-                    except Exception:
-                        pass
-                    # Drop the batch size so it will ramp itself up again
-                    self._batch_size = INITIAL_REDIS_BATCH
-                    self._publish_failed(e, metrics=metrics)
-                finally:
-                    self._flushing = False
+                    yield client.discard()
+                except Exception:  # noqa: S110
+                    pass
+                # Drop the batch size so it will ramp itself up again
+                self._batch_size = INITIAL_REDIS_BATCH
+                self._publish_failed(e, metrics=metrics)
+            finally:
+                self._flushing = False
+                log.debug("flushed %s metrics", len(metrics))
 
-            return _flush(metrics)
-        return defer.fail()
+        return _flush(metrics, batch_size)
 
     def _shutdown(self):
         def disconnect():

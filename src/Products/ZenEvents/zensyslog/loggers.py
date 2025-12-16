@@ -41,7 +41,7 @@ class MessageLogger(object):
         self._log.info(message)
 
 
-def _get_logger(self):
+def _get_logger():
     log = logging.getLogger("origsyslog")
     log.setLevel(logging.INFO)
     log.propagate = False

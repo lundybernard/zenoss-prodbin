@@ -35,6 +35,9 @@ DEVICE_ORGANIZER_INFO_FACT_PLUGIN = "zen_device_organizer_info"
 COMPONENT_GROUP_INFO_FACT_PLUGIN = "zen_component_group_info"
 DELETION_FACT_PLUGIN = "zen_deletion"
 DYNAMIC_SERVICE_FACT_PLUGIN = "zen_impact_dynamic_service"
+LOGICAL_NODE_FACT_PLUGIN = "zen_impact_logical_node"
+LOGICAL_NODE_ORGANIZER_FACT_PLUGIN = "zen_impact_logical_node_organizer"
+IMPACT_METATYPE_CONFIG_FACT_PLUGIN = "zen_impact_metatype_config"
 
 
 class DimensionKeys(object):
@@ -56,11 +59,18 @@ class MetadataKeys(object):
     PROD_STATE_VALUE_KEY = "prod_state_value"
     PRIORITY_MAP_KEY = "priority_conversion_map"
     PROD_STATE_MAP_KEY = "prod_state_map"
-    PROD_STATE_THRESHOLD = "zen_czProdStateThreshold"
+    CZ_PROD_STATE_THRESHOLD = "zen_czProdStateThreshold"
+    PROD_STATE_THRESHOLD = "zen_deviceProdStateThreshold"
     DELETED_KEY = "_zen_deleted_entity"
     COMPONENT_GROUPS_KEY = "component_groups"
     IMPACT_DS_ORG_KEY = "impact_ds_organizer"
+    IMPACT_LN_ORG_KEY = "impact_ln_organizer"
+    IMPACT_PARENT_LN_ORG_KEY = "impact_parent_ln_organizer"
     IMPACT_DS_IMPACTERS_KEY = "dynamic_service_impacters"
+    IMPACT_LN_CRITERIA_KEY = "logical_node_criteria"
+    IMPACT_AVAILABILITY_MAP = "impact_availability_map"
+    IMPACT_PERFORMANCE_MAP = "impact_performance_map"
+    IMPACT_ZP_METATYPE_CONFIG_MAP = "impact_zp_metatype_config_map"
     ZEN_SCHEMA_TAGS_KEY = "zen_schema_tags"
     ID_KEY = "id"
     TITLE_KEY = "title"
@@ -200,6 +210,8 @@ def device_info_fact(device):
     f.data[MetadataKeys.PROD_STATE_KEY] = device.convertProdState(f.data[MetadataKeys.PROD_STATE_VALUE_KEY])
     if device.device(): # zProdStateThreshold is for devices, component shouldn't have it
         f.data[MetadataKeys.PROD_STATE_THRESHOLD] = str(device.device().getProdStateThreshold())
+        root = device.getDmdRoot("Devices")
+        f.data[MetadataKeys.CZ_PROD_STATE_THRESHOLD] = str(root.zProdStateThreshold)
 
     osModel, osManufacturer = extract_model_manufacturer(device.getOSProductKey())
     if osModel != "":

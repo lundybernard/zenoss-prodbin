@@ -7,22 +7,6 @@
 #
 ##############################################################################
 
-# IMPORTANT! The import of the pysamba.twisted.reactor module should come
-# before any other libraries that might possibly use twisted. This will
-# ensure that the proper WmiReactor is installed before anyone else grabs a
-# reference to the wrong reactor.
-try:
-    import pysamba.twisted.reactor  # noqa F401
-    from ZenPacks.zenoss.WindowsMonitor.WMIClient import WMIClient
-    from ZenPacks.zenoss.WindowsMonitor.utils import (
-        addNTLMv2Option,
-        setNTLMv2Auth,
-    )
-
-    USE_WMI = True
-except ImportError:
-    USE_WMI = False
-
 import cPickle as pickle
 import gzip
 import os
@@ -188,12 +172,10 @@ class ZenModeler(PBDaemon):
         Get our configuration from zenhub
         """
         # add in the code to fetch cycle time, etc.
-        self.log.info("Getting configuration from ZenHub...")
-
         svc = self.config()
 
-        self.log.debug("fetching monitor properties")
         items = yield svc.callRemote("propertyItems")
+        self.log.info("retrieved service properties")
         items = dict(items)
         # If the cycletime option is not specified or zero, then use the
         # modelerCycleInterval value in the database.
@@ -206,20 +188,21 @@ class ZenModeler(PBDaemon):
         )
         reactor.callLater(self.configCycleInterval * 60, self.configure)
 
-        self.log.debug("Getting threshold classes...")
         classes = yield svc.callRemote("getThresholdClasses")
+        self.log.info("retrieved threshold classes")
         self.remote_updateThresholdClasses(classes)
 
-        self.log.debug("Getting collector thresholds...")
         thresholds = yield svc.callRemote("getCollectorThresholds")
+        self.log.info("retrieved thresholds")
         self.getThresholds().updateList(thresholds)
 
-        self.log.debug("Getting collector plugins for each DeviceClass")
         self.classCollectorPlugins = yield svc.callRemote(
             "getClassCollectorPlugins"
         )
+        self.log.info("retrieved device class plugins")
 
         self.configLoaded = True
+        self.log.info("finished retrieving zenmodeler configuration")
 
     def config(self):
         """
@@ -333,12 +316,6 @@ class ZenModeler(PBDaemon):
         clientTimeout = getattr(device, "zCollectorClientTimeout", 180)
         ip = device.manageIp
         timeout = clientTimeout + time.time()
-        if USE_WMI:
-            self.wmiCollect(device, ip, timeout)
-        else:
-            self.log.debug(
-                "skipping WMI-based collection, PySamba zenpack not installed"
-            )
         self.log.info(
             "Collect on device %s for collector loop #%03d",
             device.id,
@@ -348,38 +325,6 @@ class ZenModeler(PBDaemon):
         self.cmdCollect(device, ip, timeout)
         self.snmpCollect(device, ip, timeout)
         self.portscanCollect(device, ip, timeout)
-
-    def wmiCollect(self, device, ip, timeout):
-        """
-        Start the Windows Management Instrumentation (WMI) collector
-
-        @param device: device to collect against
-        @type device: string
-        @param ip: IP address of device to collect against
-        @type ip: string
-        @param timeout: timeout before failing the connection
-        @type timeout: integer
-        """
-        if self.options.nowmi:
-            return
-        client = None
-        try:
-            plugins = self.selectPlugins(device, "wmi")
-            if not plugins:
-                self.log.info("No WMI plugins found for %s", device.id)
-                return
-            if self.checkCollection(device):
-                self.log.info("WMI collector method for device %s", device.id)
-                self.log.info(
-                    "plugins: %s", ", ".join(p.name() for p in plugins)
-                )
-                client = WMIClient(device, self, plugins)
-            if not client or not plugins:
-                self.log.warn("WMI collector creation failed")
-                return
-        except Exception:
-            self.log.exception("Error opening WMI collector")
-        self.addClient(client, timeout, "WMI", device.id)
 
     def pythonCollect(self, device, ip, timeout):
         """
@@ -829,7 +774,7 @@ class ZenModeler(PBDaemon):
                 self.finished.append(collectorClient)
             except ValueError:
                 self.log.debug(
-                    "Client %s not found in in the list" " of active clients",
+                    "Client %s not found in the list of active clients",
                     device.id,
                 )
             self.log.info(
@@ -886,12 +831,12 @@ class ZenModeler(PBDaemon):
         ARBITRARY_BEAT = 30
         reactor.callLater(ARBITRARY_BEAT, self.heartbeat)
         if self.options.cycle:
-            evt = dict(
-                eventClass=Heartbeat,
-                component="zenmodeler",
-                device=self.options.monitor,
-                timeout=self.options.heartbeatTimeout,
-            )
+            evt = {
+                "eventClass": Heartbeat,
+                "component": "zenmodeler",
+                "device": self.options.monitor,
+                "timeout": self.options.heartbeatTimeout,
+            }
             self.sendEvent(evt)
             self.niceDoggie(self.cycleTime())
 
@@ -902,23 +847,32 @@ class ZenModeler(PBDaemon):
                 if self.startat:
                     # This stuff relies on ARBITRARY_BEAT being < 60s
                     if self.timeMatches():
-                        # Run modeling in case we have now=False, startat is not None and local time matches the startat
+                        # Run modeling in case we have now=False, startat is
+                        # not None and local time matches the startat.
                         self.started = True
-                        self.log.info("Starting modeling...")
+                        self.log.info("Starting modeling")
                         reactor.callLater(1, self.main)
                 elif not self.isMainScheduled:
-                    # Or run modeling by cycleTime in case we have now=False, startat is None
-                    # and we haven't set schedule by cycleTime yet
+                    # Or run modeling by cycleTime in case we have now=False,
+                    # startat is None and we haven't set schedule by
+                    # cycleTime yet.
                     self.isMainScheduled = True
-                    reactor.callLater(self.cycleTime(), self.main)
+                    offset = self.cycleTime()
+                    reactor.callLater(offset, self.main)
+                    self.log.info(
+                        "Scheduled modeling to start in %s seconds", offset
+                    )
             else:
-                # Going back to the normal modeling schedule either cron or cycleTime
-                # after the first immediate modeling during service startup
+                # Going back to the normal modeling schedule either cron or
+                # cycleTime after the first immediate modeling during service
+                # startup.
                 self.immediate = 0
                 self.log.info(
-                    "Starting modeling in %s seconds.", self.startDelay
+                    "Starting modeling in %s seconds", self.startDelay
                 )
                 reactor.callLater(self.startDelay, self.main)
+        else:
+            self.log.info("modeling already started")
 
     def postStatisticsImpl(self):
         # save modeled device rate
@@ -1114,13 +1068,6 @@ class ZenModeler(PBDaemon):
             help="Don't fork threads for processing",
         )
         self.parser.add_option(
-            "--nowmi",
-            dest="nowmi",
-            action="store_true",
-            default=not USE_WMI,
-            help="Do not execute WMI plugins",
-        )
-        self.parser.add_option(
             "--parallel",
             dest="parallel",
             type="int",
@@ -1174,8 +1121,7 @@ class ZenModeler(PBDaemon):
             dest="writetries",
             default=2,
             type="int",
-            help="Number of times to try to write if a "
-            "read conflict is found",
+            help="Number of times to try to write if a read conflict is found",
         )
         # FIXME: cleanup --force option #2660
         self.parser.add_option(
@@ -1234,8 +1180,6 @@ class ZenModeler(PBDaemon):
         addWorkerOptions(self.parser)
 
         TCbuildOptions(self.parser, self.usage)
-        if USE_WMI:
-            addNTLMv2Option(self.parser)
 
     def processOptions(self):
         """
@@ -1246,7 +1190,7 @@ class ZenModeler(PBDaemon):
             self.options.path = "/Devices"
         if self.options.ignorePlugins and self.options.collectPlugins:
             raise SystemExit(
-                "Only one of --ignore or --collect" " can be used at a time"
+                "Only one of --ignore or --collect can be used at a time"
             )
         if self.options.startat:
             cronmatch = re.match(
@@ -1265,9 +1209,6 @@ class ZenModeler(PBDaemon):
                     'startat option "%s" was invalid, carrying on anyway',
                     self.options.startat,
                 )
-
-        if USE_WMI:
-            setNTLMv2Auth(self.options)
 
         configFilter = parseWorkerOptions(self.options.__dict__, self.log)
         if configFilter:

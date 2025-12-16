@@ -60,11 +60,12 @@ class TestPathIndexing(ZenModelBaseTest):
         """
         Test deviceSearch is updated when a device class is moved. 
         """
+        initial_length = len(self.devcat())
         sourceOrg = self.dmd.Devices.createOrganizer('/Two/Three')
         dcmDevice = sourceOrg.createInstance('dcmDevice')
         self.dmd.Devices.Two._delObject('Three')
         brains = self.devcat()
-        self.assertEqual(len(brains), 2) # dummydev and testdev
+        self.assertEqual(len(brains), initial_length) # dummydev, testdev and RMMonitor (on fresh installation)
 
     def testDeviceUnindexOnRemoval(self):
         self.dev.setLocation('')

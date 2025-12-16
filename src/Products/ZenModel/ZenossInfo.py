@@ -355,12 +355,6 @@ class ZenossInfo(ZenModelItem, SimpleItem):
 
         return Version.parse("PyNetSnmp %s " % VERSION)
 
-    @versionmeta("WMI", "http://www.zenoss.com", optional=True)
-    def getWmiVersion(self):
-        from pysamba.version import VERSION
-
-        return Version.parse("Wmi %s " % VERSION)
-
     @versionmeta("RabbitMQ", "http://www.rabbitmq.com/")
     def getRabbitMQVersion(self):
         from Products.ZenUtils.qverify import ZenAmqp
@@ -383,7 +377,6 @@ class ZenossInfo(ZenModelItem, SimpleItem):
             self.getRabbitMQVersion,
             self.getNetSnmpVersion,
             self.getPyNetSnmpVersion,
-            self.getWmiVersion,
             self.getControlCenterVersion,
         ]
         versions = []

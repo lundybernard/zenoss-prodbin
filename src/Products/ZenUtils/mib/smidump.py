@@ -1,3 +1,5 @@
+import uuid
+import os
 import logging
 import re
 
@@ -216,7 +218,7 @@ class SMIDumpTool(object):
         if config:
             self._cmd.extend(["--config", config.filename])
 
-    def run(self, *mibfiles):
+    def run(self, in_main_process=False, *mibfiles):
         """Takes the given MIBFile objects and returns a string containing
         the output of the 'smidump -f python' command.  If multiple MIBFiles
         are given, the returned string will contain the MIB definitions from
@@ -227,14 +229,35 @@ class SMIDumpTool(object):
         if log.getEffectiveLevel() <= logging.DEBUG:
             log.debug("Executing command: %s", ' '.join(cmd))
 
-        process = Popen(cmd, stdout=PIPE, stderr=PIPE, close_fds=True)
-        output, error = process.communicate()  # blocks until done
-        rc = process.poll()
+        error = ""
+        if not in_main_process:
+            process = Popen(cmd, stdout=PIPE, stderr=PIPE, close_fds=False)
+            output, error = process.communicate()  # blocks until done
+            rc = process.poll()
+        else:
+            unique_id = uuid.uuid4().hex
+            output_file = "/tmp/mib_command_output_%s.txt" % unique_id
+            error_file = "/tmp/mib_command_error_%s.txt" % unique_id
+            cmd.extend([">", output_file, "2>", error_file])
+
+            try:
+                with open(error_file, 'r') as ef:
+                    error = ef.read()
+            except (OSError, IOError):
+                pass # No errors while running the command
+            else:
+                os.system("rm -f " + error_file)
+
+            rc = os.system(" ".join(cmd))
+
+            with open(output_file, 'r') as f:
+                output = f.read()
+            os.system("rm -f " + output_file)
 
         if rc != 0:
             raise RuntimeError("smidump failed:\n" + error.strip())
 
-        if log.getEffectiveLevel() <= logging.DEBUG:
+        if log.getEffectiveLevel() <= logging.DEBUG and error:
             for line in (ln.strip() for ln in error.split("\n")):
                 if line:
                     log.warn("[smidump] %s", line)
