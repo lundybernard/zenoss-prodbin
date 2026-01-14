@@ -46,8 +46,8 @@ from Products.ZenEvents.ZenEventClasses import (
     Status_Perf,
     Status_Snmp,
 )
-from Products.ZenModel.OSProcessMatcher import OSProcessMatcher
-from Products.ZenModel.OSProcessState import determineProcessState
+from Products.ZenRRD.osprocess import determineProcessState
+from Products.ZenRRD.osprocess import OSProcessMatcher
 from Products.ZenUtils.observable import ObservableMixin
 
 # We retrieve our configuration data remotely via a Twisted PerspectiveBroker

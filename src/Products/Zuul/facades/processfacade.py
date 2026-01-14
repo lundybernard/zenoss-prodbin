@@ -23,8 +23,8 @@ from Products.Zuul.interfaces import IInfo
 from Products.Zuul.catalog.interfaces import IModelCatalogTool
 from Products.Zuul.tree import SearchResults, StaleResultsException
 from zope.container.contained import ObjectMovedEvent
-from Products.ZenModel.OSProcessMatcher import OSProcessClassDataMatcher 
-from Products.ZenModel.OSProcessMatcher import applyOSProcessClassMatchers
+from Products.ZenRRD.osprocess import OSProcessClassDataMatcher 
+from Products.ZenRRD.osprocess import applyOSProcessClassMatchers
 from Products.ZenUtils.guid.interfaces import IGUIDManager
 
 log = logging.getLogger('zen.ProcessFacade')

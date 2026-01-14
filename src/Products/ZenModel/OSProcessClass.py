@@ -15,7 +15,7 @@ from AccessControl.class_init import InitializeClass
 from AccessControl import ClassSecurityInfo
 from AccessControl import Permissions
 from Products.ZenModel.ZenossSecurity import *
-from Products.ZenModel.OSProcessMatcher import OSProcessClassMatcher
+from Products.ZenRRD.osprocess import OSProcessClassMatcher
 from Commandable import Commandable
 from Products.ZenRelations.RelSchema import *
 from Products.ZenWidgets import messaging

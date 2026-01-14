@@ -19,8 +19,8 @@ import Globals
 
 from Products.ZenEvents import Event
 from Products.ZenEvents.ZenEventClasses import Status_OSProcess
-from Products.ZenModel.OSProcessMatcher import OSProcessDataMatcher
-from Products.ZenModel.OSProcessState import determineProcessState
+from Products.ZenRRD.osprocess import determineProcessState
+from Products.ZenRRD.osprocess import OSProcessDataMatcher
 from Products.ZenRRD.CommandParser import CommandParser
 
 log = logging.getLogger("zen.ps")
