@@ -20,7 +20,7 @@ from Products.ZenEvents.zensyslog.processor import (
     Parsers,
     parse_MSG,
 )
-from Products.ZenEvents.EventManagerBase import EventManagerBase
+from Products.ZenEvents.filters import load_syslog_parsers
 
 
 class TestGetEventClassKeyValue(TestCase):
@@ -59,10 +59,12 @@ class TestGetEventClassKeyValue(TestCase):
 
 
 class TestParseMSG(TestCase):
+    _syslog_parsers = load_syslog_parsers()
+
     def setUp(t):
         logging.getLogger().setLevel(logging.CRITICAL + 10)
         t.parsers = Parsers(t.sendEvent)
-        t.parsers.update(EventManagerBase.syslogParsers)
+        t.parsers.update(t._syslog_parsers)
 
     def tearDown(t):
         del t.parsers
@@ -90,7 +92,7 @@ class TestParseMSG(TestCase):
         key = "987654321"
         comp = "myComponent"
         msg = (
-            "date=xxxx devname=blue log_id={} type={} " "blah blah blah"
+            "date=xxxx devname=blue log_id={} type={} blah blah blah"
         ).format(key, comp)
         fields, index, drop = parse_MSG(msg, t.parsers)
         t.assertFalse(drop)

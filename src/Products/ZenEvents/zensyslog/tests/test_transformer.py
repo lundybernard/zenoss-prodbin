@@ -15,7 +15,6 @@ from mock import Mock
 
 from Products.ZenHub.interfaces import TRANSFORM_CONTINUE, TRANSFORM_DROP
 
-from Products.ZenEvents.EventManagerBase import EventManagerBase
 from Products.ZenEvents.zensyslog.transformer import (
     FilterRules,
     SyslogMsgFilter,
@@ -32,7 +31,7 @@ class SyslogMsgFilterTest(TestCase):
     def testDefaultFilterRules(self):
         app = Mock()
         rules = FilterRules(app)
-        rules.update(EventManagerBase.syslogMsgEvtFieldFilterRules)
+        rules.update({})
         self.assertEquals(app.sendEvent.called, False)
 
     def testBadFilter(self):

@@ -6,10 +6,10 @@ import six
 
 from mock import Mock
 
-from ..handlers import ReplayTrapHandler
-from ..net import FakePacket, SNMPv1, SNMPv2
-from ..oidmap import OidMap
-from ..processors import (
+from Products.ZenEvents.zentrap.handlers import ReplayTrapHandler
+from Products.ZenEvents.zentrap.net import FakePacket, SNMPv1, SNMPv2
+from Products.ZenEvents.zentrap.oidmap import OidMap
+from Products.ZenEvents.zentrap.processors import (
     LegacyVarbindProcessor,
     DirectVarbindProcessor,
     MixedVarbindProcessor,
