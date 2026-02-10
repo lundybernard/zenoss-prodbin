@@ -44,21 +44,37 @@ class FakeDevice(object):
 class User(usm.User, pb.Copyable, pb.RemoteCopy):
     def getStateToCopy(self):
         state = pb.Copyable.getStateToCopy(self)
-        if self.auth is not None:
+        state["name"] = self.name
+        state["engine"] = self.engine
+        state["context"] = self.context
+
+        if self.auth is not None and getattr(self.auth, 'protocol', None) is not None:
             state["auth"] = [self.auth.protocol.name, self.auth.passphrase]
         else:
             state["auth"] = None
-        if self.priv is not None:
+
+        if self.priv is not None and getattr(self.priv, 'protocol', None) is not None:
             state["priv"] = [self.priv.protocol.name, self.priv.passphrase]
         else:
             state["priv"] = None
+
         return state
 
     def setCopyableState(self, state):
         auth_args = state.get("auth")
-        state["auth"] = usm.Authentication(*auth_args) if auth_args else None
+        auth = usm.Authentication(*auth_args) if auth_args else None
+
         priv_args = state.get("priv")
-        state["priv"] = usm.Privacy(*priv_args) if priv_args else None
+        priv = usm.Privacy(*priv_args) if priv_args else None
+
+        usm.User.__init__(
+            self,
+            state.get("name"),
+            auth=auth,
+            priv=priv,
+            engine=state.get("engine"),
+            context=state.get("context")
+        )
         pb.RemoteCopy.setCopyableState(self, state)
 
 
@@ -71,21 +87,29 @@ class SnmpTrapConfig(HubService):
     """
 
     def remote_createAllUsers(self):
-        cat = IModelCatalogTool(self.dmd)
-        brains = cat.search(
-            (
-                "Products.ZenModel.Device.Device",
-                "Products.ZenModel.DeviceClass.DeviceClass",
+        try:
+            cat = IModelCatalogTool(self.dmd)
+            brains = cat.search(
+                (
+                    "Products.ZenModel.Device.Device",
+                    "Products.ZenModel.DeviceClass.DeviceClass",
+                )
             )
-        )
-        users = set()
-        for brain in brains:
-            device = brain.getObject()
-            user = self._create_user(device)
-            if user is not None:
-                users.add(user)
-        log.debug("SnmpTrapConfig.remote_createAllUsers %s users", len(users))
-        return list(users)
+            users = set()
+            for brain in brains:
+                try:
+                    device = brain.getObject()
+                    user = self._create_user(device)
+                    if user is not None:
+                        users.add(user)
+                except Exception:
+                    continue
+
+            log.debug("SnmpTrapConfig.remote_createAllUsers %s users", len(users))
+            return list(users)
+        except Exception as e:
+            log.error("Failed to gather SNMPv3 users: %s", e)
+            return []
 
     def remote_getTrapFilters(self, remoteCheckSum):
         currentCheckSum = md5(self.zem.trapFilters).hexdigest()  # noqa S324
@@ -108,24 +132,33 @@ class SnmpTrapConfig(HubService):
 
     def _create_user(self, obj):
         # Users are only valid for SNMP v3.
-        if obj.getProperty("zSnmpVer", None) != "v3":
+        if getattr(obj, "zSnmpVer", None) != "v3":
             return
+
+        securityName = getattr(obj, "zSnmpSecurityName", None)
+        if not securityName:
+            return
+
         try:
             return User(
-                obj.zSnmpSecurityName,
+                securityName,
                 auth=usm.Authentication(
-                    obj.zSnmpAuthType, obj.zSnmpAuthPassword
+                    getattr(obj, "zSnmpAuthType", ""),
+                    getattr(obj, "zSnmpAuthPassword", "")
                 ),
-                priv=usm.Privacy(obj.zSnmpPrivType, obj.zSnmpPrivPassword),
-                engine=obj.zSnmpEngineId,
-                context=obj.zSnmpContext,
+                priv=usm.Privacy(
+                    getattr(obj, "zSnmpPrivType", ""),
+                    getattr(obj, "zSnmpPrivPassword", "")
+                ),
+                engine=getattr(obj, "zSnmpEngineId", None),
+                context=getattr(obj, "zSnmpContext", ""),
             )
         except Exception as ex:
-            log.error(
-                "failed to create SNMP Security user  user=%s error=%s",
-                obj.zSnmpSecurityName,
-                ex,
+            log.warn(
+                "Failed to create SNMP Security user for %s: %s",
+                obj.id, ex
             )
+            return None
 
     def _objectUpdated(self, object):
         user = self._create_user(object)
@@ -144,8 +177,7 @@ if __name__ == "__main__":
             self.parser.add_option(
                 "--resolve",
                 dest="request",
-                help="Specify a specific OID or name to map "
-                "to the name or OID.",
+                help="Specify a specific OID or name to map to the name or OID.",
             )
             self.parser.add_option(
                 "--exactMatch",
