@@ -43,17 +43,17 @@ class FakeDevice(object):
 
 class User(usm.User, pb.Copyable, pb.RemoteCopy):
     def getStateToCopy(self):
-        state = pb.Copyable.getStateToCopy(self)
+        state = {}
         state["name"] = self.name
         state["engine"] = self.engine
         state["context"] = self.context
 
-        if self.auth is not None and getattr(self.auth, 'protocol', None) is not None:
+        if self.auth is not None and getattr(self.auth, "passphrase", None) is not None:
             state["auth"] = [self.auth.protocol.name, self.auth.passphrase]
         else:
             state["auth"] = None
 
-        if self.priv is not None and getattr(self.priv, 'protocol', None) is not None:
+        if self.priv is not None and getattr(self.priv, "passphrase", None) is not None:
             state["priv"] = [self.priv.protocol.name, self.priv.passphrase]
         else:
             state["priv"] = None
@@ -75,7 +75,9 @@ class User(usm.User, pb.Copyable, pb.RemoteCopy):
             engine=state.get("engine"),
             context=state.get("context")
         )
-        pb.RemoteCopy.setCopyableState(self, state)
+
+    def __hash__(self):
+        return hash((self.name, self.engine, self.context))
 
 
 pb.setUnjellyableForClass(User, User)
@@ -95,6 +97,11 @@ class SnmpTrapConfig(HubService):
                     "Products.ZenModel.DeviceClass.DeviceClass",
                 )
             )
+            log.debug(
+                "Found %s potential objects for SNMPv3 user creation",
+                len(brains),
+            )
+
             users = set()
             for brain in brains:
                 try:
@@ -102,7 +109,8 @@ class SnmpTrapConfig(HubService):
                     user = self._create_user(device)
                     if user is not None:
                         users.add(user)
-                except Exception:
+                except Exception as ex:
+                    log.warn("Failed to process object %s for SNMPv3: %s", brain.getPath(), ex)
                     continue
 
             log.debug("SnmpTrapConfig.remote_createAllUsers %s users", len(users))
@@ -137,6 +145,10 @@ class SnmpTrapConfig(HubService):
 
         securityName = getattr(obj, "zSnmpSecurityName", None)
         if not securityName:
+            log.debug(
+                "Skipping %s: zSnmpVer is v3 but zSnmpSecurityName is empty",
+                obj.id,
+            )
             return
 
         try:
