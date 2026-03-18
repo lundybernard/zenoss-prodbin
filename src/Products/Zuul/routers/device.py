@@ -509,6 +509,25 @@ class DeviceRouter(TreeRouter):
         return DirectResponse(devices=data, totalCount=devices.total,
                               hash=devices.hash_)
 
+    @serviceConnectionError
+    def getDevicesProductionState(self, uids):
+        """
+        Retrieves the production state for a list of devices.
+
+        @type  uids: list
+        @param uids: List of device uids to get production state for
+        @rtype:   DirectResponse
+        @return:  B{Properties}:
+           - data: (list) List of dictionaries containing device uid and productionState
+        """
+        facade = self._getFacade()
+        try:
+            data = facade.getDevicesProductionState(uids)
+            return DirectResponse.succeed(data=data)
+        except Exception as e:
+            log.exception(e)
+            return DirectResponse.exception(e, "Failed to get production states.")
+
     def renameDevice(self, uid, newId, retainGraphData=False):
         """
         Set the device specified by the uid,"uid" to have the
