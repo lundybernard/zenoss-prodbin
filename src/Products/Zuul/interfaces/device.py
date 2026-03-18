@@ -221,3 +221,12 @@ class IDeviceFacade(IFacade):
         @type uid: str
         @rtype: void
         """
+    def getDevicesProductionState(uids):
+        """
+        Retrieves the production state for a list of devices.
+
+        @type  uids: list
+        @param uids: List of device uids to get production state for
+        @rtype:   list
+        @return:  List of dictionaries containing device uid and productionState
+        """

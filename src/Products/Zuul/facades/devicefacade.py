@@ -18,7 +18,7 @@ import six
 
 from AccessControl import getSecurityManager
 from Acquisition import aq_base
-from Products.AdvancedQuery import Eq, Or, Generic, And, MatchGlob
+from Products.AdvancedQuery import Eq, Or, Generic, And, MatchGlob, In
 from ZODB.transact import transact
 from zope.component import getMultiAdapter, getUtility
 from zope.event import notify
@@ -1486,3 +1486,26 @@ class DeviceFacade(TreeFacade):
         if inst.zenPropIsPassword(propname):
             prop = "*" * len(prop)
         return prop
+
+    def getDevicesProductionState(self, uids):
+        """
+        Retrieves the production state for a list of devices.
+        """
+        model_catalog = IModelCatalogTool(self._dmd)
+        uids_set = set(uids)
+        query = In("uid", list(uids_set))
+        results = list(
+            model_catalog.search(
+                types="Products.ZenModel.Device.Device",
+                query=query,
+                fields=["productionState", "uid"],
+                limit=None,
+            ).results
+        )
+
+        if len(results) != len(uids_set):
+            found_uids = set(b.uid for b in results)
+            invalid_uids = uids_set - found_uids
+            raise Exception("Invalid device UIDs: %s" % ", ".join(invalid_uids))
+
+        return [{"uid": b.uid, "productionState": b.productionState} for b in results]
