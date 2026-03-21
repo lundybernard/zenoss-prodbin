@@ -7,12 +7,12 @@ JSB_FILE = $(JS_BASEDIR)/builder.jsb2
 # JS_DEPLOYPATH - the output directory relative to the repo root;
 # e.g. src/Products/ZenUI3/browser/resources/deploy
 #
-JS_DEPLOYPATH = $(JS_BASEDIR)/$(shell python2 -c "import json; print json.load(open('$(JSB_FILE)'))['deployDir']")
+JS_DEPLOYPATH = $(JS_BASEDIR)/$(shell python -c "import json; print(json.load(open('$(JSB_FILE)'))['deployDir'])")
 
 BUILDJS_COMMAND_ARGS = -d $(JS_BASEDIR)
 
 # Dependencies for compilation
-JSB_SOURCES = $(shell python2 -c "import json, os.path; print ' '.join(os.path.join('$(JS_BASEDIR)', e['path'], e['text']) for e in json.load(open('$(JSB_FILE)'))['pkgs'][0]['fileIncludes'])")
+JSB_SOURCES = $(shell python -c "import json, os.path; print(' '.join(os.path.join('$(JS_BASEDIR)', e['path'], e['text']) for e in json.load(open('$(JSB_FILE)'))['pkgs'][0]['fileIncludes']))")
 
 JSB_TARGETS = $(JS_DEPLOYPATH)/zenoss-compiled.js $(JS_DEPLOYPATH)/zenoss-compiled-debug.js
 

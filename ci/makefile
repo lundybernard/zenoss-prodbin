@@ -19,18 +19,17 @@ get_component_name = $(subst .tar,,$(subst -0-py2-none-any,,$(notdir $(basename 
 COMPONENTS_DIR = prodbin/components
 COMPONENT_FILES = \
 	extjs.tgz \
-	modelindex.tgz \
 	libsmi.deb \
 	penparser-0-py2-none-any.whl \
 	pydeps.tgz \
 	pynetsnmp-0-py2-none-any.whl \
 	service-migration-0-py2-none-any.whl \
+	zenoss.modelindex-0-py2-none-any.whl \
 	zenoss.protocols-0-py2-none-any.whl \
 	zenoss.toolbox-0-py2-none-any.whl \
 	zensocket.tgz
 COMPONENTS = $(addprefix $(COMPONENTS_DIR)/,$(COMPONENT_FILES))
 COMPONENT_VERSIONS = $(ASSEMBLY_PATH)/component_versions.json
-MODELINDEX_WHL = $(COMPONENTS_DIR)/zenoss.modelindex-0-py2-none-any.whl
 
 ZENOSS_WHL = $(COMPONENTS_DIR)/zenoss-0-py2-none-any.whl
 ZENOSS_SRC = $(shell ls -t ../dist/*.whl | head -1)
@@ -48,7 +47,6 @@ DEPENDENCIES = \
 	$(DOCKERFILE) \
 	mariadb/initdb.d/zodb.sql.gz \
 	$(COMPONENTS) \
-	$(MODELINDEX_WHL) \
 	$(ZENOSS_WHL) \
 	$(SOLR_FILES) \
 	prodbin/hubpasswd \
@@ -88,15 +86,12 @@ $(DOCKERFILE): $(DOCKERFILE).in prodbin/packages.txt ../VERSION
 		-e 's|%UID%|$(ZENOSS_UID)|' \
 		- > $@
 
-$(SOLR_FILES): $(COMPONENTS_DIR)/modelindex.tgz | $(SOLR_FILES_DIR)
-	@tar xf $< -C $(SOLR_FILES_DIR)/ --strip-components=6 $(addprefix $(SOLR_TAR_PATH)/,$(notdir $@))
+$(SOLR_FILES): $(COMPONENTS_DIR)/zenoss.modelindex-0-py2-none-any.whl | $(SOLR_FILES_DIR)
+	@unzip -j $< $(addprefix $(SOLR_TAR_PATH)/,$(notdir $@)) -d $(SOLR_FILES_DIR)/
 
 mariadb/initdb.d/zodb.sql.gz: | mariadb/initdb.d
 mariadb/initdb.d/zodb.sql.gz: ../src/Products/ZenModel/data/zodb.sql.gz
 	@cp $< $@
-
-$(MODELINDEX_WHL): $(COMPONENTS_DIR)/modelindex.tgz
-	@tar -xz -C $(COMPONENTS_DIR)/ -f $< --strip-components=1 --wildcards --transform="s/-[0-9.]\+-/-0-/" dist/zenoss.modelindex*.whl
 
 $(ZENOSS_WHL): $(ZENOSS_SRC)
 	@cp $< $@
