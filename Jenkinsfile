@@ -2,7 +2,6 @@
 pipeline {
     agent { label 'build-zenoss-product' }
     environment {
-        GIT_CREDENTIAL_ID = '59439429-e8f4-442a-ace7-122701c36e2b'
         ASSEMBLY_BRANCH = "${sh(returnStdout: true, script: "cat ASSEMBLY").trim()}"
     }
     stages {
@@ -15,7 +14,7 @@ pipeline {
                         branches: [[name: ASSEMBLY_BRANCH]],
                         extensions: [[$class: 'LocalBranch', localBranch: ASSEMBLY_BRANCH]],
                         userRemoteConfigs: [[
-                            credentialsId: GIT_CREDENTIAL_ID,
+                            credentialsId: env.GLOBAL_GIT_CREDENTIAL_ID,
                             url: 'https://github.com/zenoss/product-assembly'
                         ]]
                     ])
