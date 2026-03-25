@@ -15,7 +15,7 @@ Available at:  /zport/dmd/device_router
 """
 import logging
 from cgi import escape
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from itertools import islice
 from AccessControl import Unauthorized
 from Products.ZenUtils.Ext import DirectResponse
@@ -1368,6 +1368,45 @@ class DeviceRouter(TreeRouter):
         return DirectResponse(data=[dict(name=s.split(':')[0],
                                          value=int(s.split(':')[1])) for s in
                                     self.context.dmd.prodStateConversions])
+
+    @require('Manage DMD')
+    def setProductionStates(self, states):
+        """
+        Replace the list of available Production States with the content
+        of the `states` argument.
+
+        If `states` is None or otherwise evaluates as False, the current
+        list of Production States are unchanged.
+
+        ProdState = TypedDict("ProdState", {"name": str, "value": int})
+        @type states: List[ProdState]
+        """
+        if not states:
+            return DirectResponse.fail("no production states specified")
+        # Order the states by their value
+        conversions = sorted(
+            ((int(state["value"]), state["name"].strip()) for state in states),
+            reverse=True
+        )
+        counts = Counter(s[0] for s in conversions)
+        dups = tuple(k for k, v in counts.items() if v > 1)
+        if dups:
+            formatted_dups = (
+                "{}={}".format(name, value)
+                for value, name in conversions if value in dups
+            )
+            return DirectResponse.fail(
+                "non-unique production state value{} found: {}".format(
+                    "" if len(dups) == 1 else "s",
+                    ", ".join(formatted_dups)
+                )
+            )
+        self.context.dmd.manage_changeProperties(
+            prodStateConversions=[
+                "{}:{}".format(name, value) for value, name in conversions
+            ]
+        )
+        return DirectResponse.succeed()
 
     def getAllCredentialsProps(self, **kwargs):
         """
