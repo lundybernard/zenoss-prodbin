@@ -657,21 +657,16 @@ class AddDeviceContextAndTagsPipe(EventProcessorPipe):
 
     def _applyDeviceToEventContext(self, device, eventContext):
         eventContext.setDeviceObject(device)
-
-        # find all organizers for this device, and add their uuids to
-        # the appropriate event tags
-        deviceOrgs = self._getOrgs(
-            device, eventContext, self.DEVICE_TAGGERS
-        )
+        deviceOrgs = self._getOrgs(device, eventContext, self.DEVICE_TAGGERS)
         self._addDeviceContext(eventContext, device)
         self._addDeviceOrganizers(eventContext, deviceOrgs)
 
     def _applyComponentToEventContext(self, component, eventContext):
         eventContext.setComponentObject(component)
-
         componentOrgs = self._getOrgs(
             component, eventContext, self.COMPONENT_TAGGERS
         )
+        self._addComponentContext(eventContext, component)
         self._addComponentOrganizers(eventContext, componentOrgs)
 
     def _getOrgs(self, entity, eventContext, taggers):
@@ -752,6 +747,21 @@ class AddDeviceContextAndTagsPipe(EventProcessorPipe):
             EventProxy.DEVICE_SYSTEMS_DETAIL_KEY,
             asDelimitedList=True,
         )
+
+    def _addComponentContext(self, eventContext, component):
+        evtProxy = eventContext.eventProxy
+
+        prodState = component.getProductionState()
+        if prodState < evtProxy.prodState:
+            log.info(
+                "setting device %s component %s event from "
+                "production state %s to %s",
+                evtProxy.device,
+                evtProxy.component,
+                evtProxy.prodState,
+                prodState,
+            )
+            evtProxy.prodState = prodState
 
     def _addComponentOrganizers(self, eventContext, orgs):
         evtproxy = eventContext.eventProxy

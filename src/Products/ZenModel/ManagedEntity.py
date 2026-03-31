@@ -121,6 +121,16 @@ class ManagedEntity(
         """
         return str(self.convertProdState(self.getProductionState()))
 
+    security.declareProtected("View", "getProdState")
+
+    def getProdState(self):
+        """
+        Return the name of the current production state of this entity.
+
+        @rtype: str
+        """
+        return str(self.convertProdState(self.getProductionState()))
+
     security.declareProtected(ZEN_CHANGE_DEVICE_PRODSTATE, "setProdState")
 
     def setProdState(self, state, maintWindowChange=False, REQUEST=None):
@@ -144,6 +154,8 @@ class ManagedEntity(
             # Saves our production state for use at the end of the
             # maintenance window.
             self.setPreMWProductionState(self.getProductionState())
+
+        self._p_changed = True
 
         if REQUEST:
             IMessageSender(self).sendToBrowser(
