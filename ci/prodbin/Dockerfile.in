@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM ubuntu:22.04 AS base
+FROM ubuntu:24.04 AS base
 
 ENV LC_ALL="C.UTF-8" LANG="C.UTF-8" LANGUAGE="C.UTF-8"
 
@@ -43,10 +43,6 @@ sed -i 's/mibs :/# mibs :/g' /etc/snmp/snmp.conf
 # Remove the unnecessary packages.  Manually installed packages are not removed.
 apt-get -q purge -y --autoremove -o APT::AutoRemove::RecommendsImportant=false
 
-# Configure the python command (python2 becomes default python)
-# update-alternatives --install /usr/bin/python python /usr/bin/python3 1
-update-alternatives --install /usr/bin/python python /usr/bin/python2 2
-
 # Delete the package catalog files.
 rm -rf /var/lib/apt/lists/*
 
@@ -76,7 +72,14 @@ export BUILD_NUMBER=DEV
 EOT
 
 RUN <<EOT
-set -eux -o pipefail
+set -eux
+
+# Remove default 'ubuntu' user (fun new feature of the Ubuntu 24.04 image)
+# Adding /var/mail/ubuntu avoids a spurious warning when removing user.
+touch /var/mail/ubuntu
+chown ubuntu /var/mail/ubuntu
+userdel -r ubuntu
+
 # Add users and groups
 groupadd zenoss -g %GID%
 useradd zenoss -u %UID% -g zenoss -m -s /bin/bash -c "Zenoss Account"
@@ -95,6 +98,50 @@ sed -i -e '/\*) return;;/d' /home/zenoss/.bashrc
 # Setup deployment directories
 mkdir -p /opt/zenoss /var/zenoss
 chown -R zenoss:zenoss /opt/zenoss /var/zenoss
+EOT
+
+RUN <<EOT
+set -eux
+
+# Install python 2 with latest security fixes from Ubuntu 22.04
+BASE_URL="launchpad.net/ubuntu/+archive/primary/+files/"
+
+# Manually download libssl1.1 from Jammy as it is required for Python 2.7's _ssl module
+wget -c "https://${BASE_URL}/libssl1.1_1.1.1f-1ubuntu2.24_amd64.deb"
+dpkg -i libssl1.1_1.1.1f-1ubuntu2.24_amd64.deb
+rm libssl1.1_1.1.1f-1ubuntu2.24_amd64.deb
+
+VERSION="2.7.18-13ubuntu1.5"
+
+mkdir -p /tmp/py2_install
+pushd /tmp/py2_install
+
+# Download the specific security-patched packages
+wget -c "${BASE_URL}/libpython2.7-minimal_${VERSION}_amd64.deb"
+wget -c "${BASE_URL}/python2.7-minimal_${VERSION}_amd64.deb"
+wget -c "${BASE_URL}/libpython2.7-stdlib_${VERSION}_amd64.deb"
+wget -c "${BASE_URL}/python2.7_${VERSION}_amd64.deb"
+wget -c "${BASE_URL}/libpython2.7_${VERSION}_amd64.deb"
+wget -c "${BASE_URL}/libpython2.7-dev_${VERSION}_amd64.deb"
+wget -c "${BASE_URL}/python2.7-dev_${VERSION}_amd64.deb"
+
+# Install using apt to resolve remaining local dependencies
+apt-get install -y ./*.deb
+
+# Verification
+python2.7 --version
+python2.7 -c "import ssl; print('SSL Version:', ssl.OPENSSL_VERSION)"
+
+# Cleanup
+popd
+rm -rf /tmp/py2_install
+
+# Add python symlink
+ln -s /usr/bin/python2.7 /usr/bin/python2
+
+# Configure the python command (python2 becomes default python)
+#update-alternatives --install /usr/bin/python python /usr/bin/python3 1
+update-alternatives --install /usr/bin/python python /usr/bin/python2.7 1
 EOT
 
 USER zenoss

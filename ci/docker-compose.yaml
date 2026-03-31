@@ -1,7 +1,7 @@
 name: prodbin-ci
 services:
   rabbitmq:
-    image: zenoss/rabbitmq:5ccc9e3
+    image: zenoss/rabbitmq:749ecd1
     command: ["/bin/supervisord", "-n", "-c", "/etc/rabbitmq/supervisord.conf"]
     healthcheck:
       test: runuser -u rabbitmq -- /opt/rabbitmq/sbin/listening
@@ -18,7 +18,7 @@ services:
       - infra
 
   redis:
-    image: redis:6.0
+    image: redis:7.0
     command: /usr/local/bin/redis-server /etc/redis/redis.conf
     healthcheck:
       test: /usr/local/bin/redis-cli ping | grep -q PONG
@@ -32,7 +32,7 @@ services:
       - infra
 
   mariadb:
-    image: mariadb:10.6
+    image: mariadb:10.11
     environment:
       - MARIADB_ALLOW_EMPTY_ROOT_PASSWORD=1
       - MARIADB_USER=zenoss
@@ -52,7 +52,7 @@ services:
       - infra
 
   solr:
-    image: solr:9.6
+    image: solr:9.8
     command: solr-precreate zenoss_model /zenoss_model
     healthcheck:
       test: curl -sI http://localhost:8983/solr/admin/cores | grep -q 200
