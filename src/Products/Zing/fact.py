@@ -23,6 +23,7 @@ from Products.ZenModel.DeviceGroup import DeviceGroup
 from Products.ZenModel.System import System
 from Products.ZenModel.Location import Location
 from Products.ZenRelations.ZenPropertyManager import iszprop, iscustprop
+from Products.ZenModel.Hardware import Hardware
 
 from .interfaces import IImpactRelationshipsFactProvider
 from .shortid import shortid
@@ -219,17 +220,31 @@ def device_info_fact(device):
     if osManufacturer != "":
         f.data[MetadataKeys.OS_MANUFACTURER] = osManufacturer
 
-    hwModel, hwManufacturer = extract_model_manufacturer(device.getHWProductKey())
+    hwProductKey = None
+    hwTag = None
+    hwSN = None
+
+    if isinstance(device, Hardware):
+        hwProductKey = device.getProductKey()
+        hwTag = getattr(device, "tag", None)
+        hwSN = getattr(device, "serialNumber", None)
+    else:
+        if hasattr(device, "getHWProductKey"):
+            hwProductKey = device.getHWProductKey()
+        if hasattr(device, "getHWTag"):
+            hwTag = device.getHWTag()
+        if hasattr(device, "getHWSerialNumber"):
+            hwSN = device.getHWSerialNumber()
+
+    hwModel, hwManufacturer = extract_model_manufacturer(hwProductKey)
     if hwModel != "":
         f.data[MetadataKeys.HW_MODEL] = hwModel
     if hwManufacturer != "":
         f.data[MetadataKeys.HW_MANUFACTURER] = hwManufacturer
 
-    hwTag = device.getHWTag()
     if hwTag is not None and hwTag != "":
         f.data[MetadataKeys.HW_TAG] = hwTag
 
-    hwSN = device.getHWSerialNumber()
     if hwSN is not None and hwSN != "":
         f.data[MetadataKeys.HW_SERIAL_NUMBER] = hwSN
 
