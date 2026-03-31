@@ -7,71 +7,72 @@
 #
 ##############################################################################
 
-
-__doc__="""DeviceResult
-
-A mixin for objects that get listed like devices
-The primary object must implement device.
-
-"""
-
+from html import escape
 
 from AccessControl import ClassSecurityInfo
 from AccessControl.class_init import InitializeClass
 
-from cgi import escape
 
-class DeviceResultInt:
+class DeviceResultInt(object):
+    """
+    A mixin for objects that get listed like devices
+    The primary object must implement device.
+    """
 
     security = ClassSecurityInfo()
 
-    security.declareProtected('View', 'getDeviceName')
+    security.declareProtected("View", "getDeviceName")
+
     def getDeviceName(self):
-        '''Get the id of this device or associated device'''
+        """Get the id of this device or associated device"""
         d = self.device()
         if d:
             return d.getId()
         return "No Device"
 
+    security.declareProtected("View", "getDeviceUrl")
 
-    security.declareProtected('View', 'getDeviceUrl')
     def getDeviceUrl(self):
-        '''Get the primary url path of the device in which this
-        interface is located'''
+        """Get the primary url path of the device in which this
+        interface is located"""
         d = self.device()
         if d:
             return d.getPrimaryUrlPath()
         return ""
 
+    security.declareProtected("View", "getDeviceLink")
 
-    security.declareProtected('View', 'getDeviceLink')
     def getDeviceLink(self, screen=""):
-        '''Get the primary link for the device'''
+        """Get the primary link for the device"""
         d = self.device()
         if d:
             if self.checkRemotePerm("View", d):
                 return "<a href='%s/%s'>%s</a>" % (
-                    d.getPrimaryUrlPath(), screen, escape(d.titleOrId()))
+                    d.getPrimaryUrlPath(),
+                    screen,
+                    escape(d.titleOrId()),
+                )
             else:
                 return d.getId()
         return ""
 
+    security.declareProtected("View", "getDeviceClassPath")
 
-    security.declareProtected('View', 'getDeviceClassPath')
     def getDeviceClassPath(self):
-        '''Get the device class name for this device'''
+        """Get the device class name for this device"""
         d = self.device()
         if d:
             return d.deviceClass().getOrganizerName()
         return "No Device"
-    security.declareProtected('View', 'getDeviceClassName')
+
+    security.declareProtected("View", "getDeviceClassName")
     getDeviceClassName = getDeviceClassPath
 
+    security.declareProtected("View", "getProdState")
 
-    security.declareProtected('View', 'getProdState')
     def getProdState(self):
-        '''Get the production state of the device associated with
-        this interface'''
+        """Get the production state of the device associated with
+        this interface"""
         d = self.device()
         if d:
             # since this method is used as a case-insensitive index
@@ -79,8 +80,8 @@ class DeviceResultInt:
             return str(self.convertProdState(d.getProductionState()))
         return "None"
 
+    security.declareProtected("View", "getDeviceStatus")
 
-    security.declareProtected('View', 'getDeviceStatus')
     def getDeviceStatus(self):
         dev = self.device()
         if dev:
@@ -90,12 +91,13 @@ class DeviceResultInt:
             return self.getStatus()
         return -1
 
+    security.declareProtected("View", "getPingStatus")
 
-    security.declareProtected('View', 'getPingStatus')
     def getPingStatus(self):
         """get the ping status of the box if there is one"""
         # this import must be deferred to this point to avoid circular imports
         from Products.ZenEvents.ZenEventClasses import Status_Ping
+
         dev = self.device()
         if dev:
             dev = dev.primaryAq()
@@ -103,29 +105,33 @@ class DeviceResultInt:
         else:
             return self.getStatus(Status_Ping)
         return -1
-    security.declareProtected('View', 'getPingStatusNumber')
+
+    security.declareProtected("View", "getPingStatusNumber")
     getPingStatusNumber = getPingStatus
 
+    security.declareProtected("View", "getSnmpStatus")
 
-    security.declareProtected('View', 'getSnmpStatus')
     def getSnmpStatus(self):
         """get the snmp status of the box if there is one"""
         # this import must be deferred to this point to avoid circular imports
-        __pychecker__='no-shadow'
         from Products.ZenEvents.ZenEventClasses import Status_Snmp
+
         dev = self.device()
         if dev:
             dev = dev.primaryAq()
-            if (not getattr(dev, 'zSnmpMonitorIgnore', False)
-                and getattr(dev, 'zSnmpCommunity', "")
-                and dev.monitorDevice()):
+            if (
+                not getattr(dev, "zSnmpMonitorIgnore", False)
+                and getattr(dev, "zSnmpCommunity", "")
+                and dev.monitorDevice()
+            ):
                 return dev.getStatus(Status_Snmp)
         return -1
+
     getSnmpStatusNumber = getSnmpStatus
-    security.declareProtected('View', 'getSnmpStatusNumber')
+    security.declareProtected("View", "getSnmpStatusNumber")
 
+    security.declareProtected("View", "isResultLockedFromUpdates")
 
-    security.declareProtected('View', 'isResultLockedFromUpdates')
     def isResultLockedFromUpdates(self):
         """Return the locked from updates flag"""
         d = self.device()
@@ -133,7 +139,8 @@ class DeviceResultInt:
             return d.isLockedFromUpdates()
         return False
 
-    security.declareProtected('View', 'isResultLockedFromDeletion')
+    security.declareProtected("View", "isResultLockedFromDeletion")
+
     def isResultLockedFromDeletion(self):
         """Return the locked from deletion flag"""
         d = self.device()
@@ -141,7 +148,8 @@ class DeviceResultInt:
             return d.isLockedFromDeletion()
         return False
 
-    security.declareProtected('View', 'sendEventWhenResultBlocked')
+    security.declareProtected("View", "sendEventWhenResultBlocked")
+
     def sendEventWhenResultBlocked(self):
         """Return the send event flag"""
         d = self.device()
@@ -149,8 +157,8 @@ class DeviceResultInt:
             return d.sendEventWhenBlocked()
         return False
 
+    security.declareProtected("View", "getDeviceIp")
 
-    security.declareProtected('View', 'getDeviceIp')
     def getDeviceIp(self):
         """Get the management ip (only) of a device"""
         d = self.device()
@@ -158,8 +166,8 @@ class DeviceResultInt:
             return d.manageIp
         return ""
 
+    security.declareProtected("View", "getDeviceIpAddress")
 
-    security.declareProtected('View', 'getDeviceIpAddress')
     def getDeviceIpAddress(self):
         """Get the management ip with netmask (1.1.1.1/24) of a device"""
         d = self.device()
@@ -169,8 +177,8 @@ class DeviceResultInt:
                 return int.getIpAddress()
         return ""
 
+    security.declareProtected("View", "getDeviceMacaddress")
 
-    security.declareProtected('View', 'getDeviceMacaddress')
     def getDeviceMacaddress(self):
         """get the mac address if there is one of the primary interface"""
         d = self.device()
@@ -180,7 +188,8 @@ class DeviceResultInt:
                 return int.getInterfaceMacaddress()
         return ""
 
-    security.declareProtected('View', 'getNonLoopbackIpAddresses')
+    security.declareProtected("View", "getNonLoopbackIpAddresses")
+
     def getNonLoopbackIpAddresses(self, showNetMask=False):
         """
         List the IP addresses to which we can contact the service.
@@ -195,18 +204,24 @@ class DeviceResultInt:
         ip_list = []
         dev = self.device()
         if dev:
-            ip_list = ( obj.getIpAddress()
-                         for obj in dev.os.interfaces.objectValuesAll() )
-            ip_list = [ ip for ip in ip_list if ip and \
-                         not ip.startswith('127.0.0.1') and \
-                         not ip.startswith('::1')]
+            ip_list = (
+                obj.getIpAddress()
+                for obj in dev.os.interfaces.objectValuesAll()
+            )
+            ip_list = [
+                ip
+                for ip in ip_list
+                if ip
+                and not ip.startswith("127.0.0.1")
+                and not ip.startswith("::1")
+            ]
         else:
             manage_ip = self.getDeviceIp()
             if manage_ip:
-                ip_list = [ manage_ip ]
+                ip_list = [manage_ip]
 
         if not showNetMask:
-            ip_list = [ ip.split('/',1)[0] for ip in ip_list ]
+            ip_list = [ip.split("/", 1)[0] for ip in ip_list]
 
         return ip_list
 
