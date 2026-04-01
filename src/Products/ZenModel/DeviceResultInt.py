@@ -68,18 +68,6 @@ class DeviceResultInt(object):
     security.declareProtected("View", "getDeviceClassName")
     getDeviceClassName = getDeviceClassPath
 
-    security.declareProtected("View", "getProdState")
-
-    def getProdState(self):
-        """Get the production state of the device associated with
-        this interface"""
-        d = self.device()
-        if d:
-            # since this method is used as a case-insensitive index
-            # always return a string
-            return str(self.convertProdState(d.getProductionState()))
-        return "None"
-
     security.declareProtected("View", "getDeviceStatus")
 
     def getDeviceStatus(self):

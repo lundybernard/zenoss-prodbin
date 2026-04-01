@@ -13,6 +13,7 @@ from zope.event import notify
 from zope.interface.verify import verifyClass
 
 from Products import Zuul
+from Products.ZenModel.HardDisk import manage_addHardDisk
 from Products.ZenModel.Location import manage_addLocation
 from Products.Zuul.catalog.events import IndexingEvent
 from Products.Zuul.catalog.interfaces import IModelCatalogTool
@@ -289,7 +290,7 @@ class DeviceFacadeTest(ZuulFacadeTestCase):
         self.assertEquals(device.getProductionState(), 1000)
         self.assertEquals(device.getPerformanceServer().id, "localhost")
 
-    def test_setProductionState(self):
+    def test_setProductionStateOnDevices(self):
         dev = self.dmd.Devices.createInstance("dev")
         dev2 = self.dmd.Devices.createInstance("dev2")
 
@@ -302,6 +303,19 @@ class DeviceFacadeTest(ZuulFacadeTestCase):
 
         self.assertEqual(dev.getProductionState(), 500)
         self.assertEqual(dev2.getProductionState(), 500)
+
+    def test_setProductionStateOnComponents(self):
+        dev = self.dmd.Devices.createInstance("dev")
+        manage_addHardDisk(dev.hw.harddisks, "df0")
+        df0 = dev.hw.harddisks._getOb("df0")
+
+        self.assertEqual(dev.getProductionState(), 1000)
+        self.assertEqual(df0.getProductionState(), 1000)
+
+        self.facade.setProductionState((df0.getPrimaryUrlPath(),), 500)
+
+        self.assertEqual(dev.getProductionState(), 1000)
+        self.assertEqual(df0.getProductionState(), 500)
 
 
 def test_suite():

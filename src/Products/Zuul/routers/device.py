@@ -27,6 +27,7 @@ from zope.event import notify
 from Products import Zuul
 from Products.ZenMessaging.audit import audit
 from Products.ZenModel.Device import Device
+from Products.ZenModel.ManagedEntity import ManagedEntity
 from Products.ZenModel.ZenossSecurity import (
     ZEN_ADMIN_DEVICE,
     ZEN_CHANGE_DEVICE_PRODSTATE,
@@ -1034,10 +1035,10 @@ class DeviceRouter(TreeRouter):
             oldStates = {}
             uids = (uids,) if isinstance(uids, six.string_types) else uids
             for uid in uids:
-                device = facade._getObject(uid)
-                if isinstance(device, Device):
+                entity = facade._getObject(uid)
+                if isinstance(entity, ManagedEntity):
                     oldStates[uid] = self.context.convertProdState(
-                        device.getProductionState()
+                        entity.getProductionState()
                     )
 
             prodStateName = self.context.convertProdState(prodState)
