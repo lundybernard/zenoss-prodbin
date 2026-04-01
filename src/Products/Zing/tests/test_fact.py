@@ -10,14 +10,19 @@
 from __future__ import absolute_import
 
 from unittest import TestCase
-
+from Products.ZenModel.Device import Device
 from Products.ZenModel.Hardware import Hardware
 from Products.Zing.fact import device_info_fact, MetadataKeys
 
-class DummyDevice(object):
-    id = "dummy_device"
-    title = "Dummy Device"
 
+class DummyDevice(Device):
+    id = "test_device"
+    title = "Test Device"
+    
+    def __init__(self):
+        pass
+
+    def titleOrId(self): return self.title
     def _propertyMap(self): return []
     def device(self): return None
     def getProductionState(self): return 1000
@@ -32,16 +37,16 @@ class DummyDevice(object):
 
 
 class DummyHardwareComponent(Hardware):
-    id = "dummy_hw_comp"
-    title = "Dummy HW Component"
+    id = "test_hw_comp"
+    title = "Test HW Comp"
     
     tag = "comp_hw_tag"
     serialNumber = "comp_hw_sn"
 
     def __init__(self):
-        # Prevent calling MEProduct.__init__ which relies on ZODB infrastructure
         pass
 
+    def titleOrId(self): return self.title
     def _propertyMap(self): return []
     def device(self): return None
     def getProductionState(self): return 1000
@@ -50,11 +55,7 @@ class DummyHardwareComponent(Hardware):
     def convertProdState(self, state): return "Production"
     
     def getOSProductKey(self): return ("os_model", "os_manufacturer")
-    
-    # Its own hardware properties
     def getProductKey(self): return ("comp_hw_model", "comp_hw_manufacturer")
-
-    # Inherited device properties (fallback)
     def getHWProductKey(self): return ("device_hw_model", "device_hw_manufacturer")
     def getHWTag(self): return "device_hw_tag"
     def getHWSerialNumber(self): return "device_hw_sn"
