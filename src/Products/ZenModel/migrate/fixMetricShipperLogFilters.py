@@ -66,8 +66,9 @@ class FixMetricShipperLogFilters(Migrate.Step):
                     else:
                         log.info("No updates necesary for the logfilter for %s", servicePath)
 
-        filename = 'Products/ZenModel/migrate/data/glog-6.0.0.conf'
-        with open(zenPath(filename)) as filterFile:
+        datafile = 'data/glog-6.0.0.conf'
+        filename = os.path.join(os.path.dirname(__file__), datafile)
+        with open(filename) as filterFile:
             try:
                 filterDef = filterFile.read()
             except Exception as e:

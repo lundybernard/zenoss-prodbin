@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 
 import unittest
+import os.path
 import common
-
-from Products.ZenUtils.Utils import zenPath
 
 class Test_addMariaDBLogFilters(unittest.TestCase, common.ServiceMigrationTestCase):
     """
@@ -16,8 +15,9 @@ class Test_addMariaDBLogFilters(unittest.TestCase, common.ServiceMigrationTestCa
 
     expected_log_filters = dict()
     filterName = "mariadb"
-    filename = 'Products/ZenModel/migrate/data/%s-6.0.0.conf' % filterName
-    with open(zenPath(filename)) as filterFile:
+    datafile = 'data/%s-6.0.0.conf' % filterName
+    filename = os.path.join(os.path.dirname(__file__), "..", datafile)
+    with open(filename) as filterFile:
         filterDef = filterFile.read()
         expected_log_filters[filterName] = filterDef
 

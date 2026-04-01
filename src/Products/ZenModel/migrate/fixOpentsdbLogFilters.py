@@ -9,16 +9,12 @@
 ##############################################################################
 
 import os
-import re
 import logging
-log = logging.getLogger("zen.migrate")
-
-from Products.ZenUtils.Utils import zenPath
 
 import Migrate
 import servicemigration as sm
-from servicemigration import InstanceLimits
 
+log = logging.getLogger("zen.migrate")
 sm.require("1.1.10")
 
 
@@ -69,8 +65,8 @@ class FixOpentsdbLogFilters(Migrate.Step):
                     configFile.content = configFile.content.replace("%date{ISO8601} [%logger.%M] %msg%n", hbaseLogPattern)
                     changed = True
 
-        filename = 'Products/ZenModel/migrate/data/hbasedaemon-6.0.0.conf'
-        with open(zenPath(filename)) as filterFile:
+        filename = os.path.join(os.path.dirname(__file__),'data/hbasedaemon-6.0.0.conf')
+        with open(filename) as filterFile:
             try:
                 filterDef = filterFile.read()
             except Exception as e:

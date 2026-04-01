@@ -10,13 +10,13 @@
 import json
 import logging
 import os
-log = logging.getLogger("zen.migrate")
 
 import Migrate
 import servicemigration as sm
-sm.require("1.1.11")
 from servicemigration import HealthCheck
-from Products.ZenUtils.Utils import zenPath
+
+log = logging.getLogger("zen.migrate")
+sm.require("1.1.11")
 
 class AddSolrService(Migrate.Step):
     """
@@ -98,8 +98,9 @@ class AddSolrService(Migrate.Step):
                     break
 
         filterName = 'solr'
-        filename = 'Products/ZenModel/migrate/data/%s-6.0.0.conf' % filterName
-        with open(zenPath(filename)) as filterFile:
+        datafile = 'data/%s-6.0.0.conf' % filterName
+        filename = os.path.join(os.path.dirname(__file__), datafile)
+        with open(filename) as filterFile:
             try:
                 filterDef = filterFile.read()
             except Exception as e:

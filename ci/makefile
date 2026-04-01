@@ -87,7 +87,7 @@ $(DOCKERFILE): $(DOCKERFILE).in prodbin/packages.txt ../VERSION
 		- > $@
 
 $(SOLR_FILES): $(COMPONENTS_DIR)/zenoss.modelindex-0-py2-none-any.whl | $(SOLR_FILES_DIR)
-	@unzip -j $< $(addprefix $(SOLR_TAR_PATH)/,$(notdir $@)) -d $(SOLR_FILES_DIR)/
+	@unzip -j -o $< $(addprefix $(SOLR_TAR_PATH)/,$(notdir $@)) -d $(SOLR_FILES_DIR)/
 
 mariadb/initdb.d/zodb.sql.gz: | mariadb/initdb.d
 mariadb/initdb.d/zodb.sql.gz: ../src/Products/ZenModel/data/zodb.sql.gz

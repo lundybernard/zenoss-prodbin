@@ -9,16 +9,12 @@
 ##############################################################################
 
 import os
-import re
 import logging
-log = logging.getLogger("zen.migrate")
-
-from Products.ZenUtils.Utils import zenPath
 
 import Migrate
 import servicemigration as sm
-from servicemigration import InstanceLimits
 
+log = logging.getLogger("zen.migrate")
 sm.require("1.1.10")
 
 
@@ -57,8 +53,9 @@ class AddRedisLogFilters(Migrate.Step):
                     else:
                         log.info("No updates necesary for the logfilter for %s", servicePath)
 
-        filename = 'Products/ZenModel/migrate/data/%s-6.0.0.conf' % filterName
-        with open(zenPath(filename)) as filterFile:
+        datafile = 'data/%s-6.0.0.conf' % filterName
+        filename = os.path.join(os.path.dirname(__file__), datafile)
+        with open(filename) as filterFile:
             try:
                 filterDef = filterFile.read()
             except Exception as e:

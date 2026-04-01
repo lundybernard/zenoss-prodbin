@@ -8,8 +8,8 @@
 ##############################################################################
 
 import common
+import os.path
 import unittest
-from Products.ZenUtils.Utils import zenPath
 
 class test_addZookeeperLogFilters(unittest.TestCase, common.ServiceMigrationTestCase):
     """
@@ -23,7 +23,8 @@ class test_addZookeeperLogFilters(unittest.TestCase, common.ServiceMigrationTest
     expected_log_filters = dict()
 
     filterName = "zookeeper"
-    filename = 'Products/ZenModel/migrate/data/%s-6.0.0.conf' % filterName
-    with open(zenPath(filename)) as filterFile:
+    datafile = 'data/%s-6.0.0.conf' % filterName
+    filename = os.path.join(os.path.dirname(__file__), "..", datafile)
+    with open(filename) as filterFile:
         filterDef = filterFile.read()
         expected_log_filters[filterName] = filterDef

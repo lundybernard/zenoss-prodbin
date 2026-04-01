@@ -584,6 +584,115 @@ class AddDeviceContextAndTagsPipe(EventProcessorPipe):
         ),
     }
 
+    def __call__(self, eventContext):
+        actor = eventContext.event.actor
+
+        # Set identifier and title based on resolved object
+        element = self._findTypeIdAndElement(
+            actor,
+            EventField.Actor.ELEMENT_TYPE_ID,
+            EventField.Actor.ELEMENT_UUID,
+        )
+        self._applyElementToActor(actor, element.value)
+
+        sub_element = self._findTypeIdAndElement(
+            actor,
+            EventField.Actor.ELEMENT_SUB_TYPE_ID,
+            EventField.Actor.ELEMENT_SUB_UUID,
+        )
+        self._applySubElementToActor(actor, sub_element.value)
+
+        device = eventContext.deviceObject
+        if device is None:
+            device = self._selectByTypeId(DEVICE, element, sub_element)
+            if device is not None:
+                self._applyDeviceToEventContext(device, eventContext)
+
+        component = eventContext.componentObject
+        if component is None:
+            component = self._selectByTypeId(COMPONENT, element, sub_element)
+            if component is not None:
+                self._applyComponentToEventContext(component, eventContext)
+
+        return eventContext
+
+    def _findTypeIdAndElement(self, actor, type_id_field, uuid_field):
+        type_id = None
+        element = None
+        if actor.HasField(type_id_field):
+            type_id = getattr(actor, type_id_field)
+        if actor.HasField(uuid_field):
+            element = self._manager.getElementByUuid(
+                getattr(actor, uuid_field)
+            )
+        return _Element(type_id, element)
+
+    def _applyElementToActor(self, actor, element):
+        if not element:
+            return
+        actor.element_identifier = element.id
+        elementTitle = element.titleOrId()
+        if elementTitle != actor.element_identifier:
+            try:
+                actor.element_title = elementTitle
+            except ValueError:
+                actor.element_title = elementTitle.decode("utf8")
+
+    def _applySubElementToActor(self, actor, sub_element):
+        if not sub_element:
+            return
+        actor.element_sub_identifier = sub_element.id
+        subElementTitle = sub_element.titleOrId()
+        if subElementTitle != actor.element_sub_identifier:
+            try:
+                actor.element_sub_title = subElementTitle
+            except ValueError:
+                actor.element_sub_title = subElementTitle.decode("utf8")
+
+    def _selectByTypeId(self, typeid, element, sub_element):
+        if element.typeid == typeid:
+            return element.value
+        elif sub_element.typeid == typeid:
+            return sub_element.value
+
+    def _applyDeviceToEventContext(self, device, eventContext):
+        eventContext.setDeviceObject(device)
+
+        # find all organizers for this device, and add their uuids to
+        # the appropriate event tags
+        deviceOrgs = self._getOrgs(
+            device, eventContext, self.DEVICE_TAGGERS
+        )
+        self._addDeviceContext(eventContext, device)
+        self._addDeviceOrganizers(eventContext, deviceOrgs)
+
+    def _applyComponentToEventContext(self, component, eventContext):
+        eventContext.setComponentObject(component)
+
+        componentOrgs = self._getOrgs(
+            component, eventContext, self.COMPONENT_TAGGERS
+        )
+        self._addComponentOrganizers(eventContext, componentOrgs)
+
+    def _getOrgs(self, entity, eventContext, taggers):
+        orgs = {}
+        for tagType, info in six.iteritems(taggers):
+            getOrgFunc, orgTypeName = info
+            objList = getOrgFunc(entity)
+            if objList:
+                if not isinstance(objList, list):
+                    objList = [objList]
+                uuids = set(
+                    sum(
+                        (self._manager.getUuidsOfPath(obj) for obj in objList),
+                        [],
+                    )
+                )
+                if uuids:
+                    eventContext.eventProxy.tags.addAll(tagType, uuids)
+                orgs[orgTypeName] = [obj.getOrganizerName() for obj in objList]
+        return orgs
+
     def _addDeviceOrganizerNames(
         self,
         orgs,
@@ -653,132 +762,13 @@ class AddDeviceContextAndTagsPipe(EventProcessorPipe):
             EventProxy.COMPONENT_GROUP_DETAIL_KEY,
         )
 
-    def _findTypeIdAndElement(self, actor, type_id_field, uuid_field):
-        type_id = None
-        element = None
-        if actor.HasField(type_id_field):
-            type_id = getattr(actor, type_id_field)
-        if actor.HasField(uuid_field):
-            element = self._manager.getElementByUuid(
-                getattr(actor, uuid_field)
-            )
-        return type_id, element
 
-    def __call__(self, eventContext):
-        actor = eventContext.event.actor
+class _Element(object):
+    __slots__ = ("typeid", "value")
 
-        # Set identifier and title based on resolved object
-        element_type_id, element = self._findTypeIdAndElement(
-            eventContext.event.actor,
-            EventField.Actor.ELEMENT_TYPE_ID,
-            EventField.Actor.ELEMENT_UUID,
-        )
-        if element:
-            actor.element_identifier = element.id
-            elementTitle = element.titleOrId()
-            if elementTitle != actor.element_identifier:
-                try:
-                    actor.element_title = elementTitle
-                except ValueError:
-                    actor.element_title = elementTitle.decode("utf8")
-
-        sub_element_type_id, sub_element = self._findTypeIdAndElement(
-            eventContext.event.actor,
-            EventField.Actor.ELEMENT_SUB_TYPE_ID,
-            EventField.Actor.ELEMENT_SUB_UUID,
-        )
-        if sub_element:
-            actor.element_sub_identifier = sub_element.id
-            subElementTitle = sub_element.titleOrId()
-            if subElementTitle != actor.element_sub_identifier:
-                try:
-                    actor.element_sub_title = subElementTitle
-                except ValueError:
-                    actor.element_sub_title = subElementTitle.decode("utf8")
-
-        self._applyDeviceToContext(
-            eventContext,
-            element_type_id,
-            element,
-            sub_element_type_id,
-            sub_element,
-        )
-
-        self._applyComponentToContext(
-            eventContext,
-            element_type_id,
-            element,
-            sub_element_type_id,
-            sub_element,
-        )
-
-        return eventContext
-
-    def _applyDeviceToContext(
-        self, ctx, element_type_id, element, sub_element_type_id, sub_element
-    ):
-        if ctx.deviceObject is not None:
-            return
-
-        if element_type_id == DEVICE:
-            device = element
-        elif sub_element_type_id == DEVICE:
-            device = sub_element
-        else:
-            return
-
-        ctx.setDeviceObject(device)
-
-        orgs, tags = self._getOrgsAndTags(
-            ctx, self.DEVICE_TAGGERS, device
-        )
-        self._addDeviceContext(ctx, device)
-        self._addDeviceOrganizers(ctx, orgs)
-        for tagType, uuids in six.iteritems(tags):
-            ctx.eventProxy.tags.addAll(tagType, uuids)
-
-    def _applyComponentToContext(
-        self, ctx, element_type_id, element, sub_element_type_id, sub_element
-    ):
-        if ctx.componentObject is not None:
-            return
-
-        if element_type_id == COMPONENT:
-            component = element
-        elif sub_element_type_id == COMPONENT:
-            component = sub_element
-        else:
-            return
-
-        ctx.setComponentObject(component)
-
-        orgs, tags = self._getOrgsAndTags(
-            ctx, self.COMPONENT_TAGGERS, component
-        )
-        self._addComponentOrganizers(ctx, orgs)
-        for tagType, uuids in six.iteritems(tags):
-            ctx.eventProxy.tags.addAll(tagType, uuids)
-
-    def _getOrgsAndTags(self, ctx, taggers, entity):
-        orgs = {}
-        tags = {}
-        for tagType, orgProcessValues in six.iteritems(taggers):
-            getOrgFunc, orgTypeName = orgProcessValues
-            objList = getOrgFunc(entity)
-            if not objList:
-                continue
-            if not isinstance(objList, list):
-                objList = [objList]
-            orgs[orgTypeName] = [obj.getOrganizerName() for obj in objList]
-            uuids = set(
-                sum(
-                    (self._manager.getUuidsOfPath(obj) for obj in objList),
-                    [],
-                )
-            )
-            if uuids:
-                tags[tagType] = uuids
-        return orgs, tags
+    def __init__(self, typeid, value):
+        self.typeid = typeid
+        self.value = value
 
 
 class UpdateDeviceContextAndTagsPipe(AddDeviceContextAndTagsPipe):
@@ -799,7 +789,7 @@ class UpdateDeviceContextAndTagsPipe(AddDeviceContextAndTagsPipe):
             )
             # clear out device-specific tags and details
             deviceOrganizerTypeNames = [
-                typename for function, typename in self.DEVICE_TAGGERS.values()
+                typename for _, typename in self.DEVICE_TAGGERS.values()
             ]
             deviceDetailNames = set(
                 deviceOrganizerTypeNames
