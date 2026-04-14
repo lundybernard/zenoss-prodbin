@@ -30,6 +30,7 @@ from Products.ZenUtils.Ext import DirectRouter
 from Products.ZenUtils.extdirect.router import DirectResponse
 from Products.Zuul.decorators import require, serviceConnectionError
 from Products.ZenUtils.guid.interfaces import IGlobalIdentifier, IGUIDManager
+from Products.ZenUtils.Utils import prepId
 from Products.ZenUtils.virtual_root import IVirtualRoot
 from Products.ZenEvents.EventClass import EventClass
 from Products.ZenMessaging.audit import audit
@@ -673,7 +674,8 @@ class EventsRouter(DirectRouter):
 
     def can_add_events(self, summary, device, component, severity, evclasskey,
                   evclass=None, monitor=None, **kwargs):
-        ctx = self.context.dmd.Devices.findDevice(device.strip())
+        device = prepId(device)
+        ctx = self.context.dmd.Devices.findDevice(device)
         if not ctx:
             ctx = self.context
 
