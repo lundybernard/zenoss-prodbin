@@ -24,6 +24,7 @@ from Products.ZenModel.System import System
 from Products.ZenModel.Location import Location
 from Products.ZenRelations.ZenPropertyManager import iszprop, iscustprop
 from Products.ZenModel.Hardware import Hardware
+from Products.ZenModel.IpInterface import IpInterface
 
 from .interfaces import IImpactRelationshipsFactProvider
 from .shortid import shortid
@@ -251,6 +252,14 @@ def device_info_fact(device):
     valid_types = (str, int, long, float, bool, list, tuple, set,)
     for propdict in device._propertyMap():
         propId = propdict.get("id")
+        # Handle the 'ips' property on IpInterface objects here because
+        # the 'ips' property is not an attribute which will cause isLocal()
+        # to fail and then processing will move on to the next property.
+        if isinstance(device, IpInterface) and propId == "ips":
+            value = device.getIpAddresses()
+            if isinstance(value, valid_types):
+                f.data[propId] = value
+            continue
         if (
             not device.isLocal(propId)
             or iszprop(propId)
