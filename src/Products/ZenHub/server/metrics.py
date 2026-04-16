@@ -421,15 +421,18 @@ class ZenHubStatusReporter(object):
                 lt = stats.last_task
                 desc = ct.description
                 elapsed = timedelta(seconds=round(now - ct.started))
-                if lt:
+                if lt is not None and lt.completed is not None:
                     idle = timedelta(seconds=round(ct.started - lt.completed))
                 else:
                     idle = "n/a"
             else:
                 lt = stats.last_task
                 desc = lt.description
-                elapsed = timedelta(seconds=round(lt.completed - lt.started))
-                idle = timedelta(seconds=round(now - lt.completed))
+                if lt.started is not None and lt.completed is not None:
+                    elapsed = timedelta(seconds=round(lt.completed - lt.started))
+                    idle = timedelta(seconds=round(now - lt.completed))
+                else:
+                    elapsed = idle = "n/a"
             lines.append(
                 statsFmt.format(
                     workerId,
@@ -506,7 +509,7 @@ class StatsMonitor(object):
         ts = self.__task_stats[event.method]
 
         ws.status = "Busy"
-        if ws.last_task:
+        if ws.last_task is not None and ws.last_task.completed is not None:
             ws.idle += event.timestamp - ws.last_task.completed
 
         ws.current_task = _TaskInfo()
@@ -521,10 +524,18 @@ class StatsMonitor(object):
         ts = self.__task_stats[event.method]
 
         ts.last_completed = event.timestamp
-        ts.running_total += event.timestamp - ws.current_task.started
 
-        ws.last_task = ws.current_task
-        ws.last_task.completed = event.timestamp
+        if ws.current_task is not None and ws.current_task.started is not None:
+            ts.running_total += event.timestamp - ws.current_task.started
+            ws.last_task = ws.current_task
+            ws.last_task.completed = event.timestamp
+        else:
+            log.warn(
+                "No current task for worker=%s method=%s when completing",
+                event.worker,
+                event.method,
+            )
+
         ws.current_task = None
         ws.status = "Idle"
 
