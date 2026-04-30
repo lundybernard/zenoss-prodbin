@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="ISO-8859-1" ?>
 
 <!--
-    Zenoss RelationshipManager export completed on 2024-08-05 08:03:41.754461
+    Zenoss RelationshipManager export completed on 2026-04-30 22:54:58.359784
 
     Use ImportRM to import this file.
 
     For more information about Zenoss, go to http://www.zenoss.com
  -->
 
-<objects version="[Zenoss, version 7.2.2]" export_date="2024-08-05 08:03:41.754461" zenoss_server="1c75be4f3672" >
+<objects version="[Zenoss, version 7.3.0 r141]" export_date="2026-04-30 22:54:58.359784" zenoss_server="e2635fb36769" >
 <object id='/zport/dmd/Devices' module='Products.ZenModel.DeviceClass' class='DeviceClass' move='False'>
 <property type="lines" id="devtypes" mode="w" >
 []
@@ -59,9 +59,9 @@ v2c
 </property>
 <property id="zSnmpPrivPassword" visible="True" type="password" description="The shared private key used for encrypting SNMP requests. Must be at least 8 characters long." label="SNMP Private Password" >
 </property>
-<property id="zSnmpAuthType" visible="True" type="string" description='Use "MD5" or "SHA" signatures to authenticate SNMP requests' label="SNMP Auth Type" >
+<property id="zSnmpAuthType" visible="True" type="string" description="The cryptographic protocol used to authenticate SNMP requests." label="SNMP Authentication Protocol" >
 </property>
-<property id="zSnmpPrivType" visible="True" type="string" description='"DES" or "AES" cryptographic algorithms.' label="SNMP Priv Type" >
+<property id="zSnmpPrivType" visible="True" type="string" description="The cryptographic protocol used to encrypt SNMP packets." label="SNMP Privacy Protocol" >
 </property>
 <property id="zSnmpContext" visible="True" type="string" description="Defines the SNMPv3 CONTEXT specified by the -n flag" label="SNMP Context" >
 </property>
