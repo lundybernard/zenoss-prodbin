@@ -18,11 +18,11 @@ import six
 
 from AccessControl import getSecurityManager
 from Acquisition import aq_base
-from Products.AdvancedQuery import Eq, Or, Generic, And, MatchGlob
+from Products.AdvancedQuery import Eq, Or, Generic, And, MatchGlob, In
 from ZODB.transact import transact
 from zope.component import getMultiAdapter, getUtility
 from zope.event import notify
-from zope.interface import implements
+from zope.interface import implementer
 
 from Products.DataCollector.Plugins import (
     CoreImporter,
@@ -41,12 +41,14 @@ from Products.ZenModel.DeviceClass import DeviceClass
 from Products.ZenModel.DeviceGroup import DeviceGroup
 from Products.ZenModel.Device import Device
 from Products.ZenModel.Location import Location
+from Products.ZenModel.ManagedEntity import ManagedEntity
 from Products.ZenModel.System import System
 from Products.ZenModel.ZenossSecurity import ZEN_VIEW
 from Products.ZenUtils.IpUtil import isip, getHostByName
-from Products.ZenUtils.virtual_root import IVirtualRoot
 from Products.ZenUtils.Utils import getObjectsFromCatalog
+from Products.ZenUtils.virtual_root import IVirtualRoot
 
+from Products.Zuul import getFacade
 from Products.Zuul.catalog.component_catalog import (
     get_component_field_spec,
     pad_numeric_values_for_indexing,
@@ -55,8 +57,6 @@ from Products.Zuul.catalog.events import IndexingEvent
 from Products.Zuul.catalog.interfaces import IModelCatalogTool
 from Products.Zuul.decorators import info
 from Products.Zuul.exceptions import DatapointNameConfict
-from Products.Zuul.facades import TreeFacade
-from Products.Zuul import getFacade
 from Products.Zuul.infos.metricserver import (
     MultiContextMetricServiceGraphDefinition,
 )
@@ -74,12 +74,14 @@ from Products.Zuul.utils import (
     ZuulMessageFactory as _t,
 )
 
-iszprop = re.compile("z[A-Z]").match
+from . import TreeFacade
+
+iszprop = re.compile(r"z[A-Z]").match
 log = logging.getLogger("zen.DeviceFacade")
 
 
+@implementer(IDeviceCollectorChangeEvent)
 class DeviceCollectorChangeEvent(object):
-    implements(IDeviceCollectorChangeEvent)
     """
     Collector change event for device.
     """
@@ -108,12 +110,11 @@ class DeviceCollectorChangeEvent(object):
         return self._asynchronous
 
 
+@implementer(IDeviceFacade)
 class DeviceFacade(TreeFacade):
     """
     Facade for device stuff.
     """
-
-    implements(IDeviceFacade)
 
     def _classFactory(self, contextUid):
         return DeviceClass
@@ -741,9 +742,9 @@ class DeviceFacade(TreeFacade):
         if isinstance(uids, six.string_types):
             uids = (uids,)
         for uid in uids:
-            dev = self._getObject(uid)
-            if isinstance(dev, Device):
-                dev.setProdState(int(state))
+            entity = self._getObject(uid)
+            if isinstance(entity, ManagedEntity):
+                entity.setProdState(int(state))
 
     def doesMoveRequireRemodel(self, uid, target):
         # Resolve target if a path
@@ -1486,3 +1487,31 @@ class DeviceFacade(TreeFacade):
         if inst.zenPropIsPassword(propname):
             prop = "*" * len(prop)
         return prop
+
+    def getDevicesProductionState(self, uids):
+        """
+        Retrieves the production state for a list of devices.
+        """
+        model_catalog = IModelCatalogTool(self._dmd)
+        uids_set = set(uids)
+        query = In("uid", list(uids_set))
+        results = list(
+            model_catalog.search(
+                types="Products.ZenModel.Device.Device",
+                query=query,
+                fields=["productionState", "uid"],
+                limit=None,
+            ).results
+        )
+
+        if len(results) != len(uids_set):
+            found_uids = {b.uid for b in results}
+            invalid_uids = uids_set - found_uids
+            raise Exception(
+                "Invalid device UIDs: %s" % ", ".join(invalid_uids)
+            )
+
+        return [
+            {"uid": b.uid, "productionState": b.productionState}
+            for b in results
+        ]

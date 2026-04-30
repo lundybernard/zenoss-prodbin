@@ -43,9 +43,27 @@ class SubprocessJob(Job):
         return "Shell Command"
 
     @classmethod
-    def getJobDescription(cls, cmd, environ=None):
-        """Return a description of the job."""
-        return cmd if isinstance(cmd, basestring) else " ".join(cmd)
+    def getJobDescription(cls, *args, **kwargs):
+        """
+            Return a description of the job.
+            From Autodiscovery jobs could be received in kwargs either nets or ranges
+            From other cmd in args
+            Method will raise an index error in case it won't receive the expected kwargs or the cmd in the args
+        """
+        description = None
+        if "nets" in kwargs:
+            netdesc = ("network %s" % kwargs["nets"][0] if len(kwargs["nets"])==1
+                       else "%s networks" % len(kwargs["nets"]))
+            description = "Discover %s" % netdesc
+        elif "ranges" in kwargs:
+            rangedesc = ("IP range %s" % kwargs["ranges"][0] if len(kwargs["ranges"])==1
+                         else "%s IP ranges" % len(kwargs["ranges"]))
+            description = "Discover %s" % rangedesc
+        elif args and isinstance(args[0], basestring):
+            description = args[0] # cmd
+        else:
+            description = " ".join(args[0])
+        return description
 
     def _run(self, cmd, environ=None):
         self.log.debug("Running Job %s %s", self.getJobType(), cmd)
@@ -66,7 +84,6 @@ class SubprocessJob(Job):
                     cmd,
                     bufsize=1,
                     env=environ,
-                    close_fds=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                 )

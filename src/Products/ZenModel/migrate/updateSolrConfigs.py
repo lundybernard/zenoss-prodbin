@@ -12,9 +12,9 @@ This updates solr configs during the migrations from 7.7.3 to 8.11.1 version.
 """
 
 import logging
+import os.path
 import Migrate
 import servicemigration as sm
-from Products.ZenUtils.Utils import zenPath
 
 log = logging.getLogger("zen.migrate")
 
@@ -28,7 +28,9 @@ class UpdateSolrConfigs(Migrate.Step):
     version = Migrate.Version(300, 1, 0)
 
     def __read_file_content(self, name):
-        with open(zenPath("Products/ZenModel/migrate/data/%s" % name)) as f:
+        datafile = 'data/%s' % name
+        filename = os.path.join(os.path.dirname(__file__), datafile)
+        with open(filename) as f:
             try:
                 content = f.read()
             except Exception as e:

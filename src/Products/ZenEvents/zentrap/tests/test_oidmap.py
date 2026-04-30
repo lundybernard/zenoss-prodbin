@@ -4,7 +4,7 @@ from unittest import TestCase
 
 from mock import Mock
 
-from ..oidmap import OidMap
+from Products.ZenEvents.zentrap.oidmap import OidMap
 
 
 class TestOidMap(TestCase):

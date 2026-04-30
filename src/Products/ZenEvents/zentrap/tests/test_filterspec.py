@@ -15,7 +15,7 @@ import logging
 
 from unittest import TestCase
 
-from ..filterspec import (
+from Products.ZenEvents.zentrap.filterspec import (
     BaseFilterDefinition,
     FilterSpecification,
     GenericTrapFilterDefinition,

@@ -10,3 +10,4 @@ dist
 *.pyc
 *~
 *.sw?
+.vscode/

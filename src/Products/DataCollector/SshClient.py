@@ -27,7 +27,7 @@ from twisted.conch.ssh import (
     transport,
     userauth,
 )
-from twisted.conch.ssh.keys import Key
+from twisted.conch.ssh.keys import BadKeyError, Key
 from twisted.internet import defer, reactor
 from zope.component import queryUtility
 from Products.ZenCollector.interfaces import IEventService
@@ -390,7 +390,7 @@ class SshUserAuth(userauth.SSHUserAuthClient):
             try:
                 data = "".join(open(keyPath).readlines()).strip()
                 key = Key.fromString(data, passphrase=self.factory.password)
-            except IOError as ex:
+            except (BadKeyError, IOError) as ex:
                 message = "Unable to read the SSH key file because %s" % ex
                 log.warn(message)
                 device = "localhost"  # Fallback

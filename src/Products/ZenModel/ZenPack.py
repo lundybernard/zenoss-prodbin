@@ -32,7 +32,7 @@ from Acquisition import aq_base
 from AccessControl.class_init import InitializeClass
 from Products.ZenModel.ZenModelRM import ZenModelRM
 from Products.ZenRelations.RelSchema import *
-from Products.ZenUtils.Utils import importClass, zenPath, varPath
+from Products.ZenUtils.Utils import importClass, prodbin_products, zenPath, varPath
 from Products.ZenUtils.Version import getVersionTupleFromString
 from Products.ZenUtils.Version import Version as VersionBase
 from Products.ZenUtils.controlplane import ControlPlaneClient, ServiceTree, ControlCenterError
@@ -827,7 +827,7 @@ registerDirectory("skins", globals())
             from zipfile import ZipFile, ZIP_DEFLATED
             zipFilePath = os.path.join(path, '%s.zip' % self.id)
             zf = ZipFile(zipFilePath, 'w', ZIP_DEFLATED)
-            base = Products.__path__[-1]
+            base = prodbin_products()
             for p, ds, fd in os.walk(self.path()):
                 if p.split('/')[-1].startswith('.'): continue
                 for f in fd:
@@ -979,7 +979,7 @@ registerDirectory("skins", globals())
         if self.isEggPack():
             module = self.getModule()
             return os.path.join(module.__path__[0], *[p.strip('/') for p in parts])
-        return os.path.join(Products.__path__[-1], self.id, *parts)
+        return os.path.join(prodbin_products(), self.id, *parts)
 
 
     def isDevelopment(self):

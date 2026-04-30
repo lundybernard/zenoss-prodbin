@@ -15,16 +15,16 @@ from unittest import TestCase
 
 from mock import Mock
 
-from Products.ZenEvents.EventManagerBase import EventManagerBase
+from Products.ZenEvents.filters import load_trap_filters
 from Products.ZenHub.interfaces import TRANSFORM_CONTINUE, TRANSFORM_DROP
 
-from ..filterspec import (
+from Products.ZenEvents.zentrap.filterspec import (
     FilterSpecification,
     GenericTrapFilterDefinition,
     V1FilterDefinition,
     V2FilterDefinition,
 )
-from ..trapfilter import TrapFilter
+from Products.ZenEvents.zentrap.trapfilter import TrapFilter
 
 
 class TrapFilterTest(TestCase):
@@ -39,7 +39,9 @@ class TrapFilterTest(TestCase):
         logging.disable(logging.NOTSET)
 
     def testDropV1EventForGenericTrapInclusion(t):
-        genericTrap = 0
+        # trapfilter.py's GenericTrapFilterDefintion uses str types for keys.
+        # Updating here to ensure consistency.
+        genericTrap = '0'
         filterDef = GenericTrapFilterDefinition(99, "include", genericTrap)
         t.filter._filterspec._v1Traps[genericTrap] = filterDef
 
@@ -645,7 +647,7 @@ class TrapFilterTest(TestCase):
         t.assertEquals(TRANSFORM_CONTINUE, t.filter.transform(event))
 
     def testTrapFilterDefaultParse(t):
-        t.spec.update_from_string(EventManagerBase.trapFilters)
+        t.spec.update_from_string(load_trap_filters())
         # t.assertEquals(t.filter._eventService.sendEvent.called, False)
         t.assertEquals(len(t.filter._filterspec._v1Traps), 6)
         t.assertEquals(len(t.filter._filterspec._v1Filters), 1)

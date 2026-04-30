@@ -11,7 +11,6 @@ import logging
 import Migrate
 import os
 import servicemigration as sm
-from Products.ZenUtils.Utils import zenPath
 
 log = logging.getLogger("zen.migrate")
 sm.require("1.1.5")
@@ -50,8 +49,8 @@ class updateOpenTSDBOriginalConfig(Migrate.Step):
 
         commit = False
 
-        filename = 'Products/ZenModel/migrate/data/opentsdb.conf'
-        with open(zenPath(filename)) as configFile:
+        filename = os.path.join(os.path.dirname(__file__),'data/opentsdb.conf')
+        with open(filename) as configFile:
             try:
                 configCnt = configFile.read()
             except Exception as e:

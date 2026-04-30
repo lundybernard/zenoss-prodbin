@@ -28,7 +28,7 @@ from Products.DataCollector.plugins.CollectorPlugin import (
     GetTableMap,
     SnmpPlugin,
 )
-from Products.ZenModel.OSProcessMatcher import buildObjectMapData
+from Products.ZenRRD.osprocess import buildObjectMapData
 
 HRSWRUNENTRY = ".1.3.6.1.2.1.25.4.2.1"
 

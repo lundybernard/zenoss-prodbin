@@ -237,8 +237,6 @@ class PackageManager(object):
         """
         Initialize the packagae manager.
 
-        @parameter log: logging object
-        @type log: logging class object
         @parameter downloaddir: directory name to store downloads
         @type downloaddir: string
         @parameter extractdir: directory name to store downloads

@@ -156,12 +156,20 @@ class GenericV1Predicate(TrapFilterPredicate):
     def is_valid(self, event):
         if event.get("snmpVersion", None) != "1":
             return False
-        if event.get("snmpV1GenericTrapType", None) not in self._genericTraps:
+        # Note, we have to use an int, since _genericTraps contains only integers.
+        traptype = event.get("snmpV1GenericTrapType", None)
+        if traptype is not None and int(traptype) not in self._genericTraps:
             return False
         return True
 
     def __call__(self, event):
+        # self._definitions keys are of the str type, so we need to make sure
+        # we are casting snmpV1GenericTrapType as str instead of int.
+        # Fixes ZEN-33503
         traptype = event.get("snmpV1GenericTrapType", None)
+        if traptype is not None:
+            traptype = str(traptype)
+
         definition = self._definitions.get(traptype, None)
         if definition and not definition.exclude:
             return False

@@ -69,6 +69,7 @@ from .Threading import (  # noqa: F401
     LineReader,
     ThreadInterrupt,
 )
+import threading
 
 log = logging.getLogger("zen.Utils")
 DEFAULT_SOCKET_TIMEOUT = 30
@@ -1181,7 +1182,7 @@ def zenPath(*args):
     if args and "Products" in args[0]:
         import Products
 
-        rootpath = os.path.dirname(Products.__path__[-1])
+        rootpath = os.path.dirname(prodbin_products())
 
     return sane_pathjoin(rootpath, *args)
 
@@ -1240,6 +1241,20 @@ def binPath(fileName):
         if os.path.isfile(path):
             return path
     return ""
+
+
+_prodbin_products_path = None
+
+def prodbin_products():
+    import Products
+
+    global _prodbin_products_path
+    if _prodbin_products_path is None:
+        _prodbin_products_path = next(
+            (p for p in Products.__path__ if "zenoss-prodbin" in p),
+            Products.__path__[0],
+        )
+    return _prodbin_products_path
 
 
 def extractPostContent(REQUEST):
@@ -1334,15 +1349,27 @@ def executeCommand(cmd, REQUEST, write=None):
 
             write = _write
         log.info("Executing command: %s", " ".join(cmd))
-        f = Popen4(cmd)
-        while 1:
-            s = f.fromchild.readline()
-            if not s:
-                break
-            elif write:
-                write(s)
+
+        f = Popen(cmd, stdout=PIPE, stderr=STDOUT)
+        stdout = LineReader(f.stdout)
+        stdout.start()
+
+        _sleeper = threading.Event()
+
+        exitcode = None
+        while exitcode is None:
+            line = stdout.readline()
+            if line:
+                line = line.rstrip()
+                if write:
+                    write(line)
+                else:
+                    log.info(line)
             else:
-                log.info(s)
+                exitcode = f.poll()
+                _sleeper.wait(0.1)
+        stdout.join(timeout=1.0)
+
     except ZentinelException as e:
         if xmlrpc:
             return 1
@@ -1352,8 +1379,7 @@ def executeCommand(cmd, REQUEST, write=None):
             return 1
         raise
     else:
-        result = f.wait()
-        result = int(hex(result)[:-2], 16)
+        result = f.returncode
     return result
 
 

@@ -3,7 +3,6 @@
     xmlns:five="http://namespaces.zope.org/five"
     xmlns:meta="http://namespaces.zope.org/meta">
 
-
   <meta:provides feature="unittests" />
   <include package="Products.Five" file="meta.zcml" />
   <include package="Products.Five" file="event.zcml" />
@@ -23,6 +22,4 @@
   <include package="Products.ZenUtils"/>
   <include package="Products.Zing"/>
 
-
 </configure>
-

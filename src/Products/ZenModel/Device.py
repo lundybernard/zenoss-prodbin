@@ -1583,7 +1583,6 @@ class Device(
         ret = super(Device, self).setProdState(
             state, maintWindowChange, REQUEST
         )
-        self._p_changed = True
         if REQUEST:
             audit(
                 "UI.Device.Edit",

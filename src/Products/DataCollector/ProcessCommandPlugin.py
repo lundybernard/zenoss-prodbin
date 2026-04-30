@@ -7,7 +7,7 @@
 #
 ##############################################################################
 
-from Products.ZenModel.OSProcessMatcher import buildObjectMapData
+from Products.ZenRRD.osprocess import buildObjectMapData
 
 from .plugins.CollectorPlugin import CommandPlugin
 

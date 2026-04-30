@@ -4,7 +4,7 @@ import logging
 from struct import pack
 from unittest import TestCase
 
-from ..decode import decode_snmp_value
+from Products.ZenEvents.zentrap.decode import decode_snmp_value
 
 
 class DecodersUnitTest(TestCase):
